@@ -253,7 +253,7 @@ textarea{width:100%;min-height:74px;resize:vertical;background:var(--bg);color:v
         <div class="sechead"><h2>Registro</h2></div>
         <dl class="stats" id="stats"></dl>
         <h3>Admin</h3>
-        <p class="note">Compra automática: compra sozinha o item mais barato disponível, seja fungo ou melhoria, assim que houver nutrientes para ele. Não esporula nem gasta esporos.</p>
+        <p class="note">Compra automática: escolhe a compra que traz mais produção pelo preço, contando o tempo para juntar e o tempo para a compra se pagar. Quando vale a pena, espera e junta para um fungo mais avançado. O topo da tela mostra para o que ela está juntando. Não esporula nem gasta esporos.</p>
         <p class="note">Colheita de cogumelos verdes: colhe cada cogumelo bioluminescente logo depois que ele aparece.</p>
         <div class="row">
           <button class="ghost toggle" id="autoBtn" type="button" aria-pressed="false">Compra automática: desligada</button>
@@ -846,28 +846,59 @@ function buyShop(id){
   if (id === 'memo') s.gens[0] = Math.max(s.gens[0], 10 * (l + 1));
   sfx.buy(); recalc(); renderAll();
 }
-// Admin: buys whatever is cheapest (next fungus or available upgrade) as soon as it is affordable
-function autoBuy(){
-  let bought = 0;
-  for (let n = 0; n < 25; n++){
-    let best = null;
-    for (let i = 0; i < GENS.length; i++){
-      if (!genVisible(i)) continue;
-      const c = costOf(i, 1);
-      if (!best || c < best.c) best = {c, gen:i};
-    }
-    for (const u of UPS) if (!s.ups[u.id] && u.show(s) && (!best || u.cost < best.c)) best = {c:u.cost, up:u.id};
-    if (!best || s.n < best.c) break;
-    s.n -= best.c; bought++; s.autoBuys++;
-    if (best.up) s.ups[best.up] = true;
-    else {
-      const i = best.gen; s.gens[i]++;
+// Admin: buys the purchase with the best "time to afford + time to pay back", saving up when the best one isn't affordable yet
+let autoTarget = null;
+function baseNps(){
+  let t = 0;
+  for (let i = 0; i < GENS.length; i++) t += GENS[i].rate * s.gens[i] * genMult(i);
+  return t * globalMult();
+}
+function autoPick(){
+  const base = baseNps(), wait = Math.max(base, .1);
+  let best = null;
+  const consider = (c, gain, name, buy) => {
+    if (gain <= 0) return;
+    const score = Math.max(0, c - s.n) / wait + c / gain;
+    if (!best || score < best.score) best = {c, score, name, buy};
+  };
+  for (let i = 0; i < GENS.length; i++){
+    if (!genVisible(i)) continue;
+    s.gens[i]++; const gain = baseNps() - base; s.gens[i]--;
+    consider(costOf(i, 1), gain, GENS[i].name, () => {
+      s.gens[i]++;
       if (!s.seen['g' + i]){ s.seen['g' + i] = 1; journal(GENS[i].log); }
       spawnTip(rand(.1, .9) * W, SY + 8, Math.PI / 2 + rand(-.8, .8));
-    }
-    recalc();
+    });
   }
-  if (bought) sfx.buy();
+  for (const u of UPS){
+    if (s.ups[u.id] || !u.show(s)) continue;
+    s.ups[u.id] = true; const gain = baseNps() - base; delete s.ups[u.id];
+    consider(u.cost, gain, u.name, () => { s.ups[u.id] = true; });
+  }
+  return best;
+}
+// upgrades that don't raise production (touch, rain, glow): bought when they cost under 2 minutes of production
+function autoUtility(){
+  const lim = baseNps() * 120;
+  for (const u of UPS){
+    if (s.ups[u.id] || !u.show(s) || u.cost > s.n || u.cost > lim) continue;
+    s.ups[u.id] = true; const gain = baseNps(); delete s.ups[u.id];
+    if (gain > baseNps()) continue; // production upgrades are left to autoPick
+    s.n -= u.cost; s.ups[u.id] = true; s.autoBuys++; return true;
+  }
+  return false;
+}
+function autoBuy(){
+  let bought = 0;
+  autoTarget = null;
+  for (let n = 0; n < 25; n++){
+    if (autoUtility()){ bought++; continue; }
+    const best = autoPick();
+    if (!best) break;
+    if (s.n < best.c){ autoTarget = best; break; }
+    s.n -= best.c; best.buy(); bought++; s.autoBuys++;
+  }
+  if (bought){ sfx.buy(); recalc(); }
 }
 let prestigeArm = 0;
 function prestige(){
@@ -1077,7 +1108,9 @@ function renderChips(){
   if (s.fx.rain > 0) c.push(`<span class="chip rain">Chuva ×${rainMult()} · ${Math.ceil(s.fx.rain)}s</span>`);
   if (s.fx.frenzy > 0) c.push(`<span class="chip frenzy">Frenesi ×7 · ${Math.ceil(s.fx.frenzy)}s</span>`);
   if (s.fx.touch > 0) c.push(`<span class="chip touch">Toque ×25 · ${Math.ceil(s.fx.touch)}s</span>`);
-  if (s.auto) c.push(`<span class="chip touch">Compra automática</span>`);
+  if (s.auto) c.push(autoTarget
+    ? `<span class="chip touch">Auto: juntando para ${autoTarget.name} · falta ${fmt(Math.max(0, autoTarget.c - s.n))}</span>`
+    : `<span class="chip touch">Compra automática</span>`);
   if (s.autoGold) c.push(`<span class="chip frenzy">Colheita automática</span>`);
   const h = c.join(''); const el = $('chips'); if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; }
 }
