@@ -144,6 +144,7 @@ button{font:inherit;color:inherit}
 .ghost{padding:8px 12px;border-radius:8px;border:1px solid var(--line-2);background:none;color:var(--fg);cursor:pointer;font-size:13px}
 .ghost:hover{background:var(--raised)}
 .ghost.arm{border-color:var(--warn);color:var(--warn)}
+.ghost.toggle[aria-pressed="true"]{border-color:var(--amber);color:var(--amber);background:var(--amber-soft)}
 .shop{display:grid;gap:8px}
 .shopitem{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 12px;background:var(--raised);border:1px solid var(--line);border-radius:10px}
 .shopitem .sn{font-family:var(--f-display);font-size:15px}
@@ -251,6 +252,9 @@ textarea{width:100%;min-height:74px;resize:vertical;background:var(--bg);color:v
       <section role="tabpanel" id="p-registro" aria-labelledby="t-registro" hidden>
         <div class="sechead"><h2>Registro</h2></div>
         <dl class="stats" id="stats"></dl>
+        <h3>Admin</h3>
+        <p class="note">Compra sozinha o item mais barato disponível, seja fungo ou melhoria, assim que houver nutrientes para ele. Não esporula nem gasta esporos.</p>
+        <div class="row"><button class="ghost toggle" id="autoBtn" type="button" aria-pressed="false">Compra automática: desligada</button></div>
         <h3>Backup do jogo</h3>
         <p class="note">O progresso é salvo neste navegador a cada 10 segundos. Copie o código para guardar ou levar a outro aparelho.</p>
         <textarea id="saveText" aria-label="Código do jogo salvo" spellcheck="false"></textarea>
@@ -376,7 +380,7 @@ const fresh = () => ({
   v:1, n:0, runTotal:0, lifeTotal:0, gens:GENS.map(() => 0), ups:{},
   spores:0, sporeBank:0, shop:{}, ach:{}, clicks:0, golden:0, prestiges:0, rains:0, hzMax:0,
   played:0, runPlayed:0, fx:{rain:0, frenzy:0, touch:0}, t:{golden:80, rain:170}, gold:{left:0, x:.5},
-  buyAmt:1, sound:true, seen:{}, longAway:false, lastSave:Date.now(), log:[],
+  buyAmt:1, sound:true, auto:false, autoBuys:0, seen:{}, longAway:false, lastSave:Date.now(), log:[],
 });
 function merge(d){
   const s = Object.assign(fresh(), d || {});
@@ -838,6 +842,29 @@ function buyShop(id){
   if (id === 'memo') s.gens[0] = Math.max(s.gens[0], 10 * (l + 1));
   sfx.buy(); recalc(); renderAll();
 }
+// Admin: buys whatever is cheapest (next fungus or available upgrade) as soon as it is affordable
+function autoBuy(){
+  let bought = 0;
+  for (let n = 0; n < 25; n++){
+    let best = null;
+    for (let i = 0; i < GENS.length; i++){
+      if (!genVisible(i)) continue;
+      const c = costOf(i, 1);
+      if (!best || c < best.c) best = {c, gen:i};
+    }
+    for (const u of UPS) if (!s.ups[u.id] && u.show(s) && (!best || u.cost < best.c)) best = {c:u.cost, up:u.id};
+    if (!best || s.n < best.c) break;
+    s.n -= best.c; bought++; s.autoBuys++;
+    if (best.up) s.ups[best.up] = true;
+    else {
+      const i = best.gen; s.gens[i]++;
+      if (!s.seen['g' + i]){ s.seen['g' + i] = 1; journal(GENS[i].log); }
+      spawnTip(rand(.1, .9) * W, SY + 8, Math.PI / 2 + rand(-.8, .8));
+    }
+    recalc();
+  }
+  if (bought) sfx.buy();
+}
 let prestigeArm = 0;
 function prestige(){
   const g = sporeGain();
@@ -854,7 +881,7 @@ function prestige(){
     parts.push({x:p.x, y:p.y, vx:rand(-20, 20), vy:-rand(40, 140), r:rand(1, 2.4), t:0, life:rand(1.2, 2.6), c:'#b9a3e8'});
   }
   s.spores += g; s.sporeBank += g; s.prestiges++;
-  const keep = {spores:s.spores, sporeBank:s.sporeBank, shop:s.shop, ach:s.ach, clicks:s.clicks, golden:s.golden, prestiges:s.prestiges, rains:s.rains, played:s.played, lifeTotal:s.lifeTotal, buyAmt:s.buyAmt, sound:s.sound, seen:s.seen, longAway:s.longAway, log:s.log};
+  const keep = {spores:s.spores, sporeBank:s.sporeBank, shop:s.shop, ach:s.ach, clicks:s.clicks, golden:s.golden, prestiges:s.prestiges, rains:s.rains, played:s.played, lifeTotal:s.lifeTotal, buyAmt:s.buyAmt, sound:s.sound, auto:s.auto, autoBuys:s.autoBuys, seen:s.seen, longAway:s.longAway, log:s.log};
   s = Object.assign(fresh(), keep);
   if (lvl('memo')) s.gens[0] = 10 * lvl('memo');
   hyx.clearRect(0, 0, W, H); seedHyphae(); shownDepthCm = 1; motes.length = 0;
@@ -1032,7 +1059,7 @@ function renderStats(){
     ['Profundidade da rede', `${Math.round(shownDepthCm)} cm · horizonte ${HZ[hzIndex()].k}`],
     ['Fungos na colônia', fmt(s.gens.reduce((a, b) => a + b, 0))], ['Toques no solo', fmt(s.clicks)],
     ['Cogumelos brilhantes colhidos', fmt(s.golden)], ['Chuvas', fmt(s.rains)],
-    ['Esporulações', fmt(s.prestiges)], ['Tempo neste ciclo', fmtTime(s.runPlayed)], ['Tempo total', fmtTime(s.played)],
+    ['Esporulações', fmt(s.prestiges)], ['Compras automáticas', fmt(s.autoBuys)], ['Tempo neste ciclo', fmtTime(s.runPlayed)], ['Tempo total', fmtTime(s.played)],
   ];
   $('stats').innerHTML = rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
 }
@@ -1046,6 +1073,7 @@ function renderChips(){
   if (s.fx.rain > 0) c.push(`<span class="chip rain">Chuva ×${rainMult()} · ${Math.ceil(s.fx.rain)}s</span>`);
   if (s.fx.frenzy > 0) c.push(`<span class="chip frenzy">Frenesi ×7 · ${Math.ceil(s.fx.frenzy)}s</span>`);
   if (s.fx.touch > 0) c.push(`<span class="chip touch">Toque ×25 · ${Math.ceil(s.fx.touch)}s</span>`);
+  if (s.auto) c.push(`<span class="chip touch">Compra automática</span>`);
   const h = c.join(''); const el = $('chips'); if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; }
 }
 function renderAll(){
@@ -1053,6 +1081,8 @@ function renderAll(){
   renderHud(); renderChips(); renderGens(); renderUps(); renderSpores(); renderAch();
   if (activeTab === 'registro') renderStats();
   $('soundBtn').textContent = s.sound ? 'Som ligado' : 'Som desligado';
+  const ab = $('autoBtn'); ab.setAttribute('aria-pressed', String(s.auto));
+  ab.textContent = s.auto ? 'Compra automática: ligada' : 'Compra automática: desligada';
 }
 
 /* ---------- tabs ---------- */
@@ -1074,6 +1104,7 @@ tabs.forEach((t, k) => {
 });
 
 $('soundBtn').addEventListener('click', () => { s.sound = !s.sound; renderAll(); if (s.sound) sfx.buy(); });
+$('autoBtn').addEventListener('click', () => { s.auto = !s.auto; if (s.auto) autoBuy(); renderAll(); save(); });
 
 /* ================= SAVE ================= */
 function save(){
@@ -1136,7 +1167,7 @@ function frame(t){
   draw(dt);
   renderHud();
   uiAcc += dt; saveAcc += dt;
-  if (uiAcc > .2){ uiAcc = 0; renderAll(); }
+  if (uiAcc > .2){ uiAcc = 0; if (s.auto) autoBuy(); renderAll(); }
   if (saveAcc > 10){ saveAcc = 0; save(); }
   requestAnimationFrame(frame);
 }
