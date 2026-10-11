@@ -253,8 +253,12 @@ textarea{width:100%;min-height:74px;resize:vertical;background:var(--bg);color:v
         <div class="sechead"><h2>Registro</h2></div>
         <dl class="stats" id="stats"></dl>
         <h3>Admin</h3>
-        <p class="note">Compra sozinha o item mais barato disponível, seja fungo ou melhoria, assim que houver nutrientes para ele. Não esporula nem gasta esporos.</p>
-        <div class="row"><button class="ghost toggle" id="autoBtn" type="button" aria-pressed="false">Compra automática: desligada</button></div>
+        <p class="note">Compra automática: compra sozinha o item mais barato disponível, seja fungo ou melhoria, assim que houver nutrientes para ele. Não esporula nem gasta esporos.</p>
+        <p class="note">Colheita de cogumelos verdes: colhe cada cogumelo bioluminescente logo depois que ele aparece.</p>
+        <div class="row">
+          <button class="ghost toggle" id="autoBtn" type="button" aria-pressed="false">Compra automática: desligada</button>
+          <button class="ghost toggle" id="autoGoldBtn" type="button" aria-pressed="false">Colheita de cogumelos verdes: desligada</button>
+        </div>
         <h3>Backup do jogo</h3>
         <p class="note">O progresso é salvo neste navegador a cada 10 segundos. Copie o código para guardar ou levar a outro aparelho.</p>
         <textarea id="saveText" aria-label="Código do jogo salvo" spellcheck="false"></textarea>
@@ -380,7 +384,7 @@ const fresh = () => ({
   v:1, n:0, runTotal:0, lifeTotal:0, gens:GENS.map(() => 0), ups:{},
   spores:0, sporeBank:0, shop:{}, ach:{}, clicks:0, golden:0, prestiges:0, rains:0, hzMax:0,
   played:0, runPlayed:0, fx:{rain:0, frenzy:0, touch:0}, t:{golden:80, rain:170}, gold:{left:0, x:.5},
-  buyAmt:1, sound:true, auto:false, autoBuys:0, seen:{}, longAway:false, lastSave:Date.now(), log:[],
+  buyAmt:1, sound:true, auto:false, autoBuys:0, autoGold:false, seen:{}, longAway:false, lastSave:Date.now(), log:[],
 });
 function merge(d){
   const s = Object.assign(fresh(), d || {});
@@ -881,7 +885,7 @@ function prestige(){
     parts.push({x:p.x, y:p.y, vx:rand(-20, 20), vy:-rand(40, 140), r:rand(1, 2.4), t:0, life:rand(1.2, 2.6), c:'#b9a3e8'});
   }
   s.spores += g; s.sporeBank += g; s.prestiges++;
-  const keep = {spores:s.spores, sporeBank:s.sporeBank, shop:s.shop, ach:s.ach, clicks:s.clicks, golden:s.golden, prestiges:s.prestiges, rains:s.rains, played:s.played, lifeTotal:s.lifeTotal, buyAmt:s.buyAmt, sound:s.sound, auto:s.auto, autoBuys:s.autoBuys, seen:s.seen, longAway:s.longAway, log:s.log};
+  const keep = {spores:s.spores, sporeBank:s.sporeBank, shop:s.shop, ach:s.ach, clicks:s.clicks, golden:s.golden, prestiges:s.prestiges, rains:s.rains, played:s.played, lifeTotal:s.lifeTotal, buyAmt:s.buyAmt, sound:s.sound, auto:s.auto, autoBuys:s.autoBuys, autoGold:s.autoGold, seen:s.seen, longAway:s.longAway, log:s.log};
   s = Object.assign(fresh(), keep);
   if (lvl('memo')) s.gens[0] = 10 * lvl('memo');
   hyx.clearRect(0, 0, W, H); seedHyphae(); shownDepthCm = 1; motes.length = 0;
@@ -1074,6 +1078,7 @@ function renderChips(){
   if (s.fx.frenzy > 0) c.push(`<span class="chip frenzy">Frenesi ×7 · ${Math.ceil(s.fx.frenzy)}s</span>`);
   if (s.fx.touch > 0) c.push(`<span class="chip touch">Toque ×25 · ${Math.ceil(s.fx.touch)}s</span>`);
   if (s.auto) c.push(`<span class="chip touch">Compra automática</span>`);
+  if (s.autoGold) c.push(`<span class="chip frenzy">Colheita automática</span>`);
   const h = c.join(''); const el = $('chips'); if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; }
 }
 function renderAll(){
@@ -1083,6 +1088,8 @@ function renderAll(){
   $('soundBtn').textContent = s.sound ? 'Som ligado' : 'Som desligado';
   const ab = $('autoBtn'); ab.setAttribute('aria-pressed', String(s.auto));
   ab.textContent = s.auto ? 'Compra automática: ligada' : 'Compra automática: desligada';
+  const gb = $('autoGoldBtn'); gb.setAttribute('aria-pressed', String(s.autoGold));
+  gb.textContent = s.autoGold ? 'Colheita de cogumelos verdes: ligada' : 'Colheita de cogumelos verdes: desligada';
 }
 
 /* ---------- tabs ---------- */
@@ -1105,6 +1112,7 @@ tabs.forEach((t, k) => {
 
 $('soundBtn').addEventListener('click', () => { s.sound = !s.sound; renderAll(); if (s.sound) sfx.buy(); });
 $('autoBtn').addEventListener('click', () => { s.auto = !s.auto; if (s.auto) autoBuy(); renderAll(); save(); });
+$('autoGoldBtn').addEventListener('click', () => { s.autoGold = !s.autoGold; renderAll(); save(); });
 
 /* ================= SAVE ================= */
 function save(){
@@ -1167,7 +1175,13 @@ function frame(t){
   draw(dt);
   renderHud();
   uiAcc += dt; saveAcc += dt;
-  if (uiAcc > .2){ uiAcc = 0; if (s.auto) autoBuy(); renderAll(); }
+  if (uiAcc > .2){
+    uiAcc = 0;
+    // Admin: harvest the glowing mushroom shortly after it appears, so it is still seen
+    if (s.autoGold && s.gold.left > 0 && s.gold.left < 12.2) goldenBtn.click();
+    if (s.auto) autoBuy();
+    renderAll();
+  }
   if (saveAcc > 10){ saveAcc = 0; save(); }
   requestAnimationFrame(frame);
 }
