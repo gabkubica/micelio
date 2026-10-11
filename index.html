@@ -1,0 +1,1172 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Jogo idle sobre uma colônia de fungos que cresce sob a floresta.">
+<title>Micélio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Figtree:wght@400;500;600;700&family=Young+Serif&display=swap">
+<style>
+/* Layout: a soil-monolith display case (live canvas) beside a herbarium ledger (panel). One screen, no page scroll. */
+:root{
+  --bg:#130f0b; --case:#1a140f; --panel:#1c1611; --raised:#251d16; --raised-2:#2d241b;
+  --line:#3a2e23; --line-2:#4d3d2f;
+  --fg:#ede3cd; --muted:#a8977f; --dim:#76685a;
+  --amber:#e9a649; --amber-soft:rgba(233,166,73,.14); --amber-ink:#2b1a06;
+  --spore:#b9a3e8; --spore-soft:rgba(185,163,232,.14);
+  --glow:#a8f0bb; --rain:#94b9da; --warn:#dc7a5c;
+  --f-display:'Young Serif', Georgia, 'Times New Roman', serif;
+  --f-body:'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-mono:'DM Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.45;overflow:hidden;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+
+.app{height:100%;display:grid;grid-template-columns:minmax(0,1fr) 410px;gap:14px;padding-block:16px;padding-inline:16px}
+
+/* ---------- stage ---------- */
+.stage{position:relative;min-height:0;border-radius:14px;overflow:hidden;background:var(--case);border:1px solid var(--line);box-shadow:inset 0 0 0 4px #0f0c09, 0 18px 40px rgba(0,0,0,.35);cursor:crosshair;touch-action:manipulation;user-select:none}
+.stage:focus-visible{outline-offset:-3px}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hud{position:absolute;left:18px;top:14px;display:grid;gap:4px;pointer-events:none;text-shadow:0 2px 12px rgba(0,0,0,.8);max-width:calc(100% - 120px)}
+.bank{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.bank .big{font-family:var(--f-display);font-size:clamp(28px,4.2vw,46px);line-height:1;color:var(--amber);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.bank .unit{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.rate{font-family:var(--f-mono);font-size:13px;color:var(--fg);font-variant-numeric:tabular-nums}
+.rate span{color:var(--amber)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.chip{font-family:var(--f-mono);font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid currentColor;background:rgba(19,15,11,.7);font-variant-numeric:tabular-nums}
+.chip.rain{color:var(--rain)} .chip.frenzy{color:var(--glow)} .chip.touch{color:var(--amber)} .chip.depth{color:var(--muted);border-color:var(--line-2)}
+.iconbtn{position:absolute;right:12px;top:12px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:6px 10px;border-radius:8px;background:rgba(19,15,11,.72);border:1px solid var(--line-2);color:var(--muted);cursor:pointer}
+.iconbtn:hover{color:var(--fg)}
+.golden{position:absolute;width:52px;height:52px;padding:0;transform:translate(-50%,-86%);background:none;border:0;cursor:pointer;filter:drop-shadow(0 0 10px rgba(168,240,187,.85));animation:breathe 1.6s ease-in-out infinite;z-index:3}
+.golden svg{width:100%;height:100%;display:block}
+@keyframes breathe{0%,100%{transform:translate(-50%,-86%) scale(1)}50%{transform:translate(-50%,-90%) scale(1.1)}}
+.journal{position:absolute;left:12px;bottom:12px;margin:0;padding:8px 12px;list-style:none;max-width:min(430px,calc(100% - 90px));display:grid;gap:3px;background:rgba(19,15,11,.74);border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(4px);pointer-events:none;font-size:12px;color:var(--muted)}
+.journal:empty{display:none}
+.journal li{display:flex;gap:8px;animation:fadein .5s ease-out}
+.journal li:first-child{color:var(--fg)}
+.journal time{font-family:var(--f-mono);font-size:10.5px;color:var(--dim);flex:none;padding-top:1px}
+@keyframes fadein{from{opacity:.2;transform:translateY(4px)}to{opacity:1;transform:none}}
+.hint{position:absolute;left:50%;top:58%;transform:translateX(-50%);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg);background:rgba(19,15,11,.72);padding:7px 14px;border-radius:999px;border:1px solid var(--line-2);pointer-events:none;transition:opacity .8s;white-space:nowrap}
+.toasts{position:absolute;right:12px;top:52px;display:grid;gap:8px;justify-items:end;pointer-events:none;z-index:4;max-width:calc(100% - 24px)}
+.toast{background:var(--raised);border:1px solid var(--line-2);border-radius:10px;padding:9px 13px;max-width:290px;box-shadow:0 10px 24px rgba(0,0,0,.4);animation:toastin .35s ease-out;transition:opacity .5s, transform .5s}
+.toast b{display:block;font-family:var(--f-display);font-weight:400;font-size:15px}
+.toast span{font-size:12px;color:var(--muted)}
+.toast .k{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+.toast.spore .k{color:var(--spore)} .toast.glow .k{color:var(--glow)} .toast.rain .k{color:var(--rain)}
+.toast.out{opacity:0;transform:translateX(12px)}
+@keyframes toastin{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+
+/* ---------- panel ---------- */
+.panel{min-height:0;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.brand{padding:16px 18px 10px;display:flex;align-items:baseline;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line)}
+.brand h1{margin:0;font-family:var(--f-display);font-weight:400;font-size:28px;letter-spacing:-.01em;line-height:1}
+.brand p{margin:0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);text-align:right}
+.tabs{display:flex;gap:2px;padding:8px 10px 0;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:1 0 auto;background:none;border:0;border-bottom:2px solid transparent;padding:8px 8px 9px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;position:relative;white-space:nowrap}
+.tab:hover{color:var(--fg)}
+.tab[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--amber)}
+.tab .badge{display:inline-block;min-width:17px;margin-left:5px;padding:0 5px;border-radius:999px;background:var(--amber);color:var(--amber-ink);font-size:10.5px;line-height:17px;font-family:var(--f-mono);text-align:center}
+.tab .badge.spore{background:var(--spore);color:#1b1230}
+.tab .badge:empty{display:none}
+.tabbody{flex:1;min-height:0;overflow-y:auto;padding:14px 14px 20px;scrollbar-color:var(--line-2) transparent}
+[role="tabpanel"]{display:grid;gap:12px}
+.sechead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.sechead h2,.panel h3{margin:0;font-family:var(--f-display);font-weight:400;font-size:18px}
+.panel h3{font-size:16px;margin-top:6px}
+.panel h3 small{font-family:var(--f-body);font-size:12px;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line-2);border-radius:8px;overflow:hidden}
+.seg button{background:none;border:0;padding:5px 10px;font-family:var(--f-mono);font-size:12px;color:var(--muted);cursor:pointer}
+.seg button+button{border-left:1px solid var(--line-2)}
+.seg button[aria-pressed="true"]{background:var(--amber);color:var(--amber-ink)}
+.note{margin:0;font-size:12.5px;color:var(--muted)}
+
+.genlist{display:grid;gap:8px}
+.gen{position:relative;display:grid;grid-template-columns:46px minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;text-align:left;padding:10px 12px 11px;background:var(--raised);border:1px solid var(--line);border-radius:10px;cursor:pointer;overflow:hidden;transition:border-color .15s, background .15s}
+.gen:hover{border-color:var(--line-2);background:var(--raised-2)}
+.gen.ok{border-color:rgba(233,166,73,.55)}
+.gen.poor{cursor:default}
+.gen.poor .tag,.gen.poor .gmain{opacity:.62}
+.gen.bump{animation:bump .25s ease-out}
+@keyframes bump{50%{transform:scale(.985)}}
+.tag{position:relative;width:46px;height:46px;border:1px solid var(--line-2);border-radius:6px;display:grid;place-items:center;font-family:var(--f-display);font-size:19px;background:var(--panel)}
+.tag small{position:absolute;left:4px;top:2px;font-family:var(--f-mono);font-size:9px;color:var(--dim)}
+.gmain{display:grid;gap:1px;min-width:0}
+.gname{font-weight:600;font-size:14px}
+.glatin{font-style:italic;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gstat{font-family:var(--f-mono);font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
+.gfact{font-size:11.5px;color:var(--dim);margin-top:2px}
+.gside{display:grid;justify-items:end;gap:2px}
+.gown{font-family:var(--f-display);font-size:24px;line-height:1;font-variant-numeric:tabular-nums}
+.gcost{font-family:var(--f-mono);font-size:12px;color:var(--amber);white-space:nowrap;font-variant-numeric:tabular-nums}
+.gen.poor .gcost{color:var(--muted)}
+.gbar{position:absolute;left:0;right:0;bottom:0;height:2px;background:transparent}
+.gbar i{display:block;height:100%;width:0;background:var(--amber);opacity:.7;transition:width .2s linear}
+.gen.teaser{cursor:default;border-style:dashed;background:transparent}
+.gen.teaser .tag{color:var(--dim)}
+
+.uplist{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:8px}
+.up{display:grid;gap:3px;align-content:start;text-align:left;padding:10px 12px;background:var(--raised);border:1px solid var(--line);border-radius:10px;cursor:pointer}
+.up:hover{background:var(--raised-2)}
+.up.ok{border-color:rgba(233,166,73,.55)}
+.up.poor{cursor:default}
+.up.poor > :not(.ucost){opacity:.62}
+.up .uk{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.up .un{font-family:var(--f-display);font-size:15px;line-height:1.2}
+.up .ud{font-size:12px;color:var(--muted)}
+.up .ucost{font-family:var(--f-mono);font-size:12px;color:var(--amber);margin-top:4px}
+.up.poor .ucost{color:var(--muted)}
+.empty{margin:0;padding:18px;border:1px dashed var(--line-2);border-radius:10px;color:var(--muted);font-size:13px;text-align:center}
+.owned{display:flex;flex-wrap:wrap;gap:6px}
+.owned span{font-size:11.5px;padding:3px 8px;border-radius:6px;background:var(--raised);border:1px solid var(--line);color:var(--muted)}
+
+.sporecard{padding:16px;border-radius:12px;border:1px solid rgba(185,163,232,.35);background:linear-gradient(160deg,var(--spore-soft),transparent 70%);display:grid;gap:10px}
+.sporebig{display:flex;align-items:baseline;gap:10px}
+.sporebig b{font-family:var(--f-display);font-weight:400;font-size:40px;line-height:1;color:var(--spore);font-variant-numeric:tabular-nums}
+.sporebig span{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.sporecard p{margin:0;font-size:13px;color:var(--muted)}
+.sporecard p b{color:var(--fg);font-weight:600}
+.meter{height:6px;border-radius:99px;background:var(--raised-2);overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:var(--spore);transition:width .3s}
+.primary{padding:11px 14px;border-radius:10px;border:0;font-weight:700;font-size:14px;cursor:pointer;background:var(--amber);color:var(--amber-ink)}
+.primary.spore{background:var(--spore);color:#1b1230}
+.primary[aria-disabled="true"]{opacity:.4;cursor:not-allowed}
+.primary.arm{background:var(--warn);color:#2a0f06}
+.ghost{padding:8px 12px;border-radius:8px;border:1px solid var(--line-2);background:none;color:var(--fg);cursor:pointer;font-size:13px}
+.ghost:hover{background:var(--raised)}
+.ghost.arm{border-color:var(--warn);color:var(--warn)}
+.shop{display:grid;gap:8px}
+.shopitem{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 12px;background:var(--raised);border:1px solid var(--line);border-radius:10px}
+.shopitem .sn{font-family:var(--f-display);font-size:15px}
+.shopitem .sn small{font-family:var(--f-mono);font-size:11px;color:var(--spore);margin-left:6px}
+.shopitem .sd{font-size:12px;color:var(--muted)}
+.shopitem button{padding:7px 11px;border-radius:8px;border:1px solid rgba(185,163,232,.5);background:var(--spore-soft);color:var(--spore);font-family:var(--f-mono);font-size:12px;cursor:pointer;white-space:nowrap}
+.shopitem button[aria-disabled="true"]{opacity:.45;cursor:not-allowed}
+
+.achgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.ach{padding:10px 11px;border-radius:10px;border:1px solid var(--line);background:var(--raised);display:grid;gap:2px}
+.ach b{font-family:var(--f-display);font-weight:400;font-size:14px}
+.ach span{font-size:11.5px;color:var(--muted)}
+.ach.locked{background:transparent;border-style:dashed}
+.ach.locked b{color:var(--dim)}
+.ach.got{border-color:rgba(233,166,73,.45)}
+
+.stats{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;margin:0;font-size:13px}
+.stats dt{color:var(--muted)}
+.stats dd{margin:0;font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:right}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+textarea{width:100%;min-height:74px;resize:vertical;background:var(--bg);color:var(--fg);border:1px solid var(--line-2);border-radius:8px;padding:8px;font-family:var(--f-mono);font-size:11px}
+
+.modal{position:fixed;inset:0;display:grid;place-items:center;background:rgba(8,6,4,.72);z-index:20;padding-inline:16px}
+.modal .card{max-width:420px;width:100%;background:var(--panel);border:1px solid var(--line-2);border-radius:14px;padding:22px;display:grid;gap:12px;box-shadow:0 30px 60px rgba(0,0,0,.5)}
+.modal h2{margin:0;font-family:var(--f-display);font-weight:400;font-size:24px}
+.modal p{margin:0;color:var(--muted)}
+.modal .gain{font-family:var(--f-display);font-size:34px;color:var(--amber)}
+
+@media (max-width:860px){
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(250px,46%) minmax(0,1fr);gap:10px;padding-block:10px}
+  .brand{padding:12px 14px 8px}
+  .brand h1{font-size:22px}
+  .journal{font-size:11px;max-width:calc(100% - 24px)}
+  .journal li:nth-child(n+3){display:none}
+  .toasts{top:46px}
+}
+@media (prefers-reduced-motion:reduce){
+  .golden,.journal li,.toast,.gen.bump{animation:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="stage" id="stage" tabindex="0" aria-label="Perfil de solo. Toque ou pressione espaço para absorver nutrientes.">
+    <canvas id="cv"></canvas>
+    <div class="hud">
+      <div class="bank"><span class="big" id="nVal">0</span><span class="unit">nutrientes</span></div>
+      <div class="rate"><span id="npsVal">0</span>/s &nbsp;·&nbsp; toque +<span id="clickVal">1</span></div>
+      <div class="chips" id="chips"></div>
+    </div>
+    <button class="iconbtn" id="soundBtn" type="button">Som ligado</button>
+    <button class="golden" id="golden" type="button" hidden aria-label="Colher cogumelo bioluminescente">
+      <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M21 26c0 6-1 12-2 18h10c-1-6-2-12-2-18z" fill="#d8f7df"/><path d="M4 26C6 12 15 5 24 5s18 7 20 21c-6 2-13 3-20 3S10 28 4 26z" fill="#a8f0bb"/><path d="M8 25c5 1.5 10 2 16 2s11-.5 16-2" stroke="#5fbf7c" stroke-width="1.5" fill="none"/><circle cx="17" cy="15" r="2.2" fill="#e9fff0"/><circle cx="28" cy="12" r="1.6" fill="#e9fff0"/></svg>
+    </button>
+    <ol class="journal" id="journal" aria-live="polite"></ol>
+    <div class="hint" id="hint">Toque no solo para absorver nutrientes</div>
+    <div class="toasts" id="toasts"></div>
+  </section>
+
+  <aside class="panel" aria-label="Painel da colônia">
+    <header class="brand"><h1>Micélio</h1><p>Uma colônia de fungos<br>sob a floresta</p></header>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" id="t-fungos" aria-controls="p-fungos" aria-selected="true" type="button">Fungos</button>
+      <button class="tab" role="tab" id="t-melhorias" aria-controls="p-melhorias" aria-selected="false" type="button">Melhorias<span class="badge" id="upBadge"></span></button>
+      <button class="tab" role="tab" id="t-esporos" aria-controls="p-esporos" aria-selected="false" type="button">Esporos<span class="badge spore" id="spBadge"></span></button>
+      <button class="tab" role="tab" id="t-conquistas" aria-controls="p-conquistas" aria-selected="false" type="button">Conquistas</button>
+      <button class="tab" role="tab" id="t-registro" aria-controls="p-registro" aria-selected="false" type="button">Registro</button>
+    </nav>
+    <div class="tabbody" id="tabbody">
+      <section role="tabpanel" id="p-fungos" aria-labelledby="t-fungos">
+        <div class="sechead"><h2>Espécies da colônia</h2>
+          <div class="seg" id="buyAmt" role="group" aria-label="Quantidade por compra">
+            <button type="button" data-amt="1">×1</button><button type="button" data-amt="10">×10</button><button type="button" data-amt="100">×100</button><button type="button" data-amt="max">Máx</button>
+          </div>
+        </div>
+        <div class="genlist" id="genList"></div>
+      </section>
+
+      <section role="tabpanel" id="p-melhorias" aria-labelledby="t-melhorias" hidden>
+        <div class="sechead"><h2>Adaptações disponíveis</h2></div>
+        <div class="uplist" id="upList"></div>
+        <h3>Já adquiridas <small id="ownedCount"></small></h3>
+        <div class="owned" id="ownedList"></div>
+      </section>
+
+      <section role="tabpanel" id="p-esporos" aria-labelledby="t-esporos" hidden>
+        <div class="sporecard">
+          <div class="sporebig"><b id="spTotal">0</b><span>esporos</span></div>
+          <p>Cada esporo soma <b id="spEff">10%</b> a toda a produção. Bônus atual: <b id="spBonus">+0%</b>.</p>
+          <div class="meter" aria-hidden="true"><i id="spMeter"></i></div>
+          <p>Se esporular agora, a colônia libera <b id="spGain">0</b> esporos. <span id="spNext"></span></p>
+          <button class="primary spore" id="prestigeBtn" type="button">Esporular</button>
+          <p style="font-size:12px">Esporular recomeça o ciclo: nutrientes, fungos, melhorias e profundidade voltam ao início. Esporos, conquistas e o banco genético ficam.</p>
+        </div>
+        <h3>Banco genético <small>· <span id="spBank">0</span> esporos para gastar</small></h3>
+        <p class="note">Gastar esporos aqui não reduz o bônus de produção.</p>
+        <div class="shop" id="shopList"></div>
+      </section>
+
+      <section role="tabpanel" id="p-conquistas" aria-labelledby="t-conquistas" hidden>
+        <div class="sechead"><h2>Caderno de campo</h2><span class="note" id="achSum"></span></div>
+        <div class="achgrid" id="achGrid"></div>
+      </section>
+
+      <section role="tabpanel" id="p-registro" aria-labelledby="t-registro" hidden>
+        <div class="sechead"><h2>Registro</h2></div>
+        <dl class="stats" id="stats"></dl>
+        <h3>Backup do jogo</h3>
+        <p class="note">O progresso é salvo neste navegador a cada 10 segundos. Copie o código para guardar ou levar a outro aparelho.</p>
+        <textarea id="saveText" aria-label="Código do jogo salvo" spellcheck="false"></textarea>
+        <div class="row">
+          <button class="ghost" id="exportBtn" type="button">Copiar código</button>
+          <button class="ghost" id="importBtn" type="button">Carregar código</button>
+          <button class="ghost" id="resetBtn" type="button">Apagar tudo</button>
+        </div>
+        <p class="note" id="saveMsg" aria-live="polite"></p>
+      </section>
+    </div>
+  </aside>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <h2 id="mTitle">Bem-vindo de volta</h2>
+    <p id="mBody"></p>
+    <div class="gain" id="mGain"></div>
+    <button class="primary" id="mOk" type="button">Continuar</button>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+const TAU = Math.PI * 2;
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rand = (a, b) => a + Math.random() * (b - a);
+const SAVE_KEY = 'micelio.save.v1';
+
+/* ================= DATA ================= */
+const GENS = [
+  {name:'Hifa', latin:'Filamento micelial', tag:'Hf', cost:15, rate:0.1, fact:'Uma hifa mede de 2 a 10 µm de diâmetro, mais fina que um fio de cabelo.', log:'A primeira hifa rompeu o esporo e tateia o solo úmido.'},
+  {name:'Bolor verde', latin:'Trichoderma harzianum', tag:'Tr', cost:100, rate:1, fact:'Decompõe celulose e protege raízes contra fungos rivais.', log:'Um bolor verde se espalha pelas folhas caídas, desmontando celulose.'},
+  {name:'Cogumelo-ostra', latin:'Pleurotus ostreatus', tag:'Pl', cost:1100, rate:8, fact:'Digere lignina e paralisa nematoides com toxinas.', log:'Cogumelos-ostra brotaram de um galho podre.'},
+  {name:'Micorriza arbuscular', latin:'Rhizophagus irregularis', tag:'Rh', cost:12000, rate:47, fact:'Mais de 70% das plantas terrestres vivem em simbiose com micorrizas.', log:'As raízes aceitaram a parceria: açúcar em troca de fósforo.'},
+  {name:'Cogumelo-do-mel', latin:'Armillaria ostoyae', tag:'Ar', cost:130000, rate:260, fact:'Um único indivíduo no Oregon ocupa cerca de 965 hectares.', log:'Rizomorfos negros avançam como cordões sob a casca das árvores.'},
+  {name:'Líquen', latin:'Cladonia rangiferina', tag:'Cl', cost:1.4e6, rate:1400, fact:'Fungo e alga juntos colonizam rocha nua e dão início ao solo.', log:'Um líquen se fixou numa pedra. O solo começa ali.'},
+  {name:'Fungo-zumbi', latin:'Ophiocordyceps unilateralis', tag:'Op', cost:2e7, rate:7800, fact:'Faz formigas subirem até a altura ideal para espalhar esporos.', log:'Uma formiga subiu num caule e não desceu mais.'},
+  {name:'Rede da floresta', latin:'Rede micorrízica comum', tag:'Ww', cost:3.3e8, rate:44000, fact:'Árvores-mãe repassam carbono a mudas pela rede de fungos.', log:'As árvores agora trocam carbono e sinais através da sua rede.'},
+  {name:'Prototaxites', latin:'Prototaxites loganii', tag:'Pt', cost:5.1e9, rate:260000, fact:'Fungo do Devoniano com troncos de até 8 m, há cerca de 400 milhões de anos.', log:'Colunas de Prototaxites se erguem como no Devoniano.'},
+  {name:'Micélio planetário', latin:'Escala continental', tag:'Mp', cost:7.5e10, rate:1.6e6, fact:'Uma colher de chá de solo saudável pode conter quilômetros de hifas.', log:'O micélio já envolve o continente como uma segunda pele.'},
+];
+const TIER_AT = [1, 10, 25, 50, 100, 150];
+const TIER_COST = [10, 50, 500, 5e4, 5e6, 5e8];
+const TIER_NAMES = ['Septos porosos', 'Anastomose', 'Rizomorfos', 'Corpos de frutificação', 'Linhagem antiga', 'Clone milenar'];
+
+const HZ = [
+  {k:'O', name:'Serrapilheira', at:0,    cm:[0,5],     col:'#2c2016', sp:['#4d3421','#3a281a'], grain:1.7, frac:.07},
+  {k:'A', name:'Húmus',         at:1e4,  cm:[5,30],    col:'#1f1610', sp:['#33251a','#150f0a'], grain:1.1, frac:.22, log:'A rede atravessou a serrapilheira e chegou ao húmus escuro.'},
+  {k:'B', name:'Subsolo',       at:1e6,  cm:[30,90],   col:'#2d1b11', sp:['#4b2c18','#3b2214'], grain:1.0, frac:.27, log:'Abaixo de 30 cm: argila e óxidos de ferro do horizonte B.'},
+  {k:'C', name:'Regolito',      at:1e8,  cm:[90,200],  col:'#2a2520', sp:['#463d33','#1c1814'], grain:2.3, frac:.25, log:'O regolito: rocha fragmentada e pouca matéria orgânica.'},
+  {k:'R', name:'Rocha-mãe',     at:1e10, cm:[200,300], col:'#2e2b28', sp:['#48433e','#211f1d'], grain:3.0, frac:.19, log:'As hifas tocaram a rocha-mãe. Ácidos orgânicos começam a dissolvê-la.'},
+];
+
+const UPS = [];
+GENS.forEach((g, i) => TIER_AT.forEach((at, t) => UPS.push({
+  id:`g${i}t${t}`, kind:g.name, name:TIER_NAMES[t], desc:`Produção de ${g.name} ×2`, cost:g.cost * TIER_COST[t], gi:i,
+  show:s => s.gens[i] >= at,
+})));
+UPS.push(
+  {id:'c1', kind:'Toque', name:'Enzimas celulases', desc:'Absorção por toque ×2', cost:100, click:2, show:s => s.clicks >= 10 || s.runTotal >= 60},
+  {id:'c2', kind:'Toque', name:'Lignina peroxidase', desc:'Absorção por toque ×2', cost:1000, click:2, show:s => s.runTotal >= 400},
+  {id:'c3', kind:'Toque', name:'Quitinases', desc:'Absorção por toque ×2', cost:2e4, click:2, show:s => s.runTotal >= 8e3},
+  {id:'c4', kind:'Toque', name:'Spitzenkörper', desc:'Cada toque rende também 1% da produção por segundo', cost:2e5, pct:.01, show:s => s.runTotal >= 8e4},
+  {id:'c5', kind:'Toque', name:'Turgor apical', desc:'Toque rende +2% da produção por segundo', cost:2e7, pct:.02, show:s => s.runTotal >= 8e6},
+  {id:'c6', kind:'Toque', name:'Apressório', desc:'Toque rende +3% da produção por segundo. Alguns fungos perfuram folhas com 8 MPa.', cost:2e9, pct:.03, show:s => s.runTotal >= 8e8},
+  {id:'w1', kind:'Global', name:'Ciclo do carbono', desc:'Toda a produção +10%', cost:5e4, g:.10, show:s => s.runTotal >= 1.5e4},
+  {id:'w2', kind:'Global', name:'Glomalina', desc:'Toda a produção +15%. Proteína fúngica que cola o solo.', cost:5e6, g:.15, show:s => s.runTotal >= 1.5e6},
+  {id:'w3', kind:'Global', name:'Agregados do solo', desc:'Toda a produção +20%', cost:5e8, g:.20, show:s => s.runTotal >= 1.5e8},
+  {id:'w4', kind:'Global', name:'Pedogênese', desc:'Toda a produção +25%', cost:5e10, g:.25, show:s => s.runTotal >= 1.5e10},
+  {id:'w5', kind:'Global', name:'Biosfera micelial', desc:'Toda a produção +30%', cost:5e12, g:.30, show:s => s.runTotal >= 1.5e12},
+  {id:'exsud', kind:'Simbiose', name:'Exsudatos radiculares', desc:'Hifa +5% por Micorriza arbuscular', cost:6e4, show:s => s.gens[3] >= 1},
+  {id:'rizo', kind:'Simbiose', name:'Cordões miceliais', desc:'Bolor verde +3% por Cogumelo-do-mel', cost:1.5e6, show:s => s.gens[4] >= 1},
+  {id:'zumbi', kind:'Simbiose', name:'Caçadores de nematoides', desc:'Cogumelo-ostra +4% por Fungo-zumbi', cost:2.5e8, show:s => s.gens[6] >= 1},
+  {id:'devon', kind:'Simbiose', name:'Herança devoniana', desc:'Líquen +5% por Prototaxites', cost:6e10, show:s => s.gens[8] >= 1},
+  {id:'hidro', kind:'Clima', name:'Hidrotropismo', desc:'A chuva dura o dobro do tempo', cost:2e4, show:s => s.rains >= 1},
+  {id:'capil', kind:'Clima', name:'Capilaridade', desc:'Durante a chuva a produção fica ×3 em vez de ×2', cost:2e6, show:s => s.rains >= 3},
+  {id:'mycena', kind:'Brilho', name:'Mycena chlorophos', desc:'Cogumelos bioluminescentes surgem com o dobro da frequência', cost:1e5, show:s => s.golden >= 1},
+  {id:'lucif', kind:'Brilho', name:'Luciferina fúngica', desc:'Efeitos dos cogumelos brilhantes duram o dobro', cost:1e7, show:s => s.golden >= 3},
+);
+const UPMAP = Object.fromEntries(UPS.map(u => [u.id, u]));
+
+const SHOP = [
+  {id:'memo',  name:'Memória genética',   max:5,  desc:l => `Cada ciclo começa com ${10 * Math.max(1, l)} hifas`, cost:l => 2 ** l},
+  {id:'heran', name:'Herança enzimática', max:1,  desc:() => 'Absorção por toque ×3, para sempre', cost:() => 2},
+  {id:'vigor', name:'Esporos vigorosos',  max:10, desc:() => 'Cada esporo soma +1 ponto percentual a mais', cost:l => 2 + l * 3},
+  {id:'dorm',  name:'Dormência ativa',    max:5,  desc:() => 'Produção enquanto você está fora +10 pontos (base 50%)', cost:l => 1 + l * 2},
+  {id:'luz',   name:'Luz antiga',         max:3,  desc:() => 'Cogumelos brilhantes 25% mais frequentes', cost:l => 3 + l * 3},
+  {id:'germ',  name:'Germinação rápida',  max:5,  desc:() => 'Todos os fungos 3% mais baratos', cost:l => 4 + l * 4},
+];
+
+const ACH = [
+  {id:'h1', name:'Germinação', desc:'Tenha sua primeira hifa', ok:s => s.gens[0] >= 1},
+  {id:'k100', name:'Toque persistente', desc:'Toque no solo 100 vezes', ok:s => s.clicks >= 100},
+  {id:'k1000', name:'Mão de jardineiro', desc:'Toque no solo 1.000 vezes', ok:s => s.clicks >= 1000},
+  {id:'t3', name:'Decompositor', desc:'Absorva 1 mil nutrientes no total', ok:s => s.lifeTotal >= 1e3},
+  {id:'t6', name:'Ciclo de nutrientes', desc:'Absorva 1 milhão no total', ok:s => s.lifeTotal >= 1e6},
+  {id:'t9', name:'Solo vivo', desc:'Absorva 1 bilhão no total', ok:s => s.lifeTotal >= 1e9},
+  {id:'t12', name:'Biosfera', desc:'Absorva 1 trilhão no total', ok:s => s.lifeTotal >= 1e12},
+  {id:'t15', name:'Gaia', desc:'Absorva 1 quatrilhão no total', ok:s => s.lifeTotal >= 1e15},
+  {id:'r1', name:'Rede ativa', desc:'Produza 10 por segundo', ok:() => cache.nps >= 10},
+  {id:'r3', name:'Fluxo constante', desc:'Produza 1 mil por segundo', ok:() => cache.nps >= 1e3},
+  {id:'r6', name:'Pulso da floresta', desc:'Produza 1 milhão por segundo', ok:() => cache.nps >= 1e6},
+  {id:'r9', name:'Respiração do planeta', desc:'Produza 1 bilhão por segundo', ok:() => cache.nps >= 1e9},
+  ...GENS.map((g, i) => ({id:'c50_' + i, name:'Colônia: ' + g.name, desc:`Tenha 50 de ${g.name}`, ok:s => s.gens[i] >= 50})),
+  {id:'gl1', name:'Luz no escuro', desc:'Colha um cogumelo bioluminescente', ok:s => s.golden >= 1},
+  {id:'gl13', name:'Noite de Mycena', desc:'Colha 13 cogumelos bioluminescentes', ok:s => s.golden >= 13},
+  {id:'rn1', name:'Primeira chuva', desc:'Atravesse uma chuva', ok:s => s.rains >= 1},
+  {id:'rn10', name:'Estação chuvosa', desc:'Atravesse 10 chuvas', ok:s => s.rains >= 10},
+  {id:'hzA', name:'Húmus', desc:'Chegue ao horizonte A', ok:s => s.hzMax >= 1},
+  {id:'hzR', name:'Rocha-mãe', desc:'Chegue ao horizonte R', ok:s => s.hzMax >= 4},
+  {id:'p1', name:'Esporulação', desc:'Esporule pela primeira vez', ok:s => s.prestiges >= 1},
+  {id:'p5', name:'Ciclo de vida', desc:'Esporule 5 vezes', ok:s => s.prestiges >= 5},
+  {id:'sp100', name:'Nuvem de esporos', desc:'Acumule 100 esporos', ok:s => s.spores >= 100},
+  {id:'away', name:'Dormência', desc:'Volte depois de 1 hora fora', ok:s => s.longAway},
+];
+
+/* ================= STATE ================= */
+const fresh = () => ({
+  v:1, n:0, runTotal:0, lifeTotal:0, gens:GENS.map(() => 0), ups:{},
+  spores:0, sporeBank:0, shop:{}, ach:{}, clicks:0, golden:0, prestiges:0, rains:0, hzMax:0,
+  played:0, runPlayed:0, fx:{rain:0, frenzy:0, touch:0}, t:{golden:80, rain:170}, gold:{left:0, x:.5},
+  buyAmt:1, sound:true, seen:{}, longAway:false, lastSave:Date.now(), log:[],
+});
+function merge(d){
+  const s = Object.assign(fresh(), d || {});
+  s.gens = GENS.map((_, i) => +(d && d.gens && d.gens[i]) || 0);
+  s.fx = Object.assign(fresh().fx, d && d.fx);
+  s.t = Object.assign(fresh().t, d && d.t);
+  s.gold = Object.assign(fresh().gold, d && d.gold);
+  for (const k of ['ups','shop','ach','seen']) s[k] = Object.assign({}, d && d[k]);
+  s.log = Array.isArray(d && d.log) ? d.log.slice(0, 4) : [];
+  for (const k of ['n','runTotal','lifeTotal','spores','sporeBank']) if (!isFinite(s[k]) || s[k] < 0) s[k] = 0;
+  return s;
+}
+let s = fresh();
+const cache = {nps:0, npsBase:0, click:1, ach:0};
+
+/* ================= FORMAT ================= */
+const SUF = ['', 'mil', 'mi', 'bi', 'tri', 'quatri', 'quint', 'sext', 'sept', 'oct', 'non', 'dec'];
+function fmt(n){
+  if (!isFinite(n)) return '∞';
+  if (n < 0) return '−' + fmt(-n);
+  if (n < 1000){
+    if (n < 100 && n % 1) return (Math.floor(n * 10) / 10).toLocaleString('pt-BR');
+    return Math.floor(n).toLocaleString('pt-BR');
+  }
+  const k = Math.floor(Math.log10(n) / 3);
+  if (k >= SUF.length) return n.toExponential(2).replace('.', ',');
+  const v = n / 10 ** (3 * k);
+  const t = v < 10 ? Math.floor(v * 100) / 100 : v < 100 ? Math.floor(v * 10) / 10 : Math.floor(v);
+  return t.toLocaleString('pt-BR') + ' ' + SUF[k];
+}
+function fmtTime(sec){
+  sec = Math.floor(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), x = sec % 60;
+  return h ? `${h}h ${m}min` : m ? `${m}min ${x}s` : `${x}s`;
+}
+const clock = () => new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+
+/* ================= ECONOMY ================= */
+const lvl = id => s.shop[id] || 0;
+const discount = () => 1 - .03 * lvl('germ');
+const sporeEff = () => .10 + .01 * lvl('vigor');
+function hzIndex(){ let k = 0; HZ.forEach((h, j) => { if (s.runTotal >= h.at) k = j; }); return k; }
+function genMult(i){
+  let m = 1;
+  for (let t = 0; t < TIER_AT.length; t++) if (s.ups[`g${i}t${t}`]) m *= 2;
+  if (i === 0 && s.ups.exsud) m *= 1 + .05 * s.gens[3];
+  if (i === 1 && s.ups.rizo) m *= 1 + .03 * s.gens[4];
+  if (i === 2 && s.ups.zumbi) m *= 1 + .04 * s.gens[6];
+  if (i === 5 && s.ups.devon) m *= 1 + .05 * s.gens[8];
+  return m;
+}
+function globalMult(){
+  let m = (1 + s.spores * sporeEff()) * (1 + .01 * cache.ach) * 1.2 ** hzIndex();
+  for (const u of UPS) if (u.g && s.ups[u.id]) m *= 1 + u.g;
+  return m;
+}
+const rainMult = () => s.ups.capil ? 3 : 2;
+const tempMult = () => (s.fx.rain > 0 ? rainMult() : 1) * (s.fx.frenzy > 0 ? 7 : 1);
+const genEach = i => GENS[i].rate * genMult(i) * globalMult();
+function recalc(){
+  const gm = globalMult();
+  let t = 0;
+  for (let i = 0; i < GENS.length; i++) t += GENS[i].rate * s.gens[i] * genMult(i);
+  cache.npsBase = t * gm;
+  cache.nps = cache.npsBase * tempMult();
+  let c = 1, pct = 0;
+  for (const u of UPS){ if (!s.ups[u.id]) continue; if (u.click) c *= u.click; if (u.pct) pct += u.pct; }
+  if (lvl('heran')) c *= 3;
+  c = c * (1 + s.spores * sporeEff() * .5) + cache.nps * pct;
+  if (s.fx.touch > 0) c *= 25;
+  cache.click = c;
+}
+function costOf(i, k){
+  const r = 1.15, base = GENS[i].cost * discount() * r ** s.gens[i];
+  return base * (r ** k - 1) / (r - 1);
+}
+function maxBuy(i){
+  const r = 1.15, base = GENS[i].cost * discount() * r ** s.gens[i];
+  return Math.max(0, Math.floor(Math.log(s.n * (r - 1) / base + 1) / Math.log(r)));
+}
+const buyCount = i => s.buyAmt === 'max' ? Math.max(1, maxBuy(i)) : s.buyAmt;
+function addN(x){ s.n += x; s.runTotal += x; s.lifeTotal += x; }
+const sporeGain = () => Math.floor(Math.sqrt(s.runTotal / 1e8));
+const genVisible = i => i === 0 || s.gens[i] > 0 || s.runTotal >= GENS[i].cost * .35;
+
+/* ================= AUDIO ================= */
+let ac = null;
+function audio(){
+  if (!s.sound) return null;
+  try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) { return null; }
+  return ac;
+}
+function tone(f, dur = .16, vol = .06, type = 'sine', drop = .5, delay = 0){
+  const a = audio(); if (!a) return;
+  const t0 = a.currentTime + delay, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t0); o.frequency.exponentialRampToValueAtTime(f * drop, t0 + dur);
+  g.gain.setValueAtTime(.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + .012); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
+  o.connect(g); g.connect(a.destination); o.start(t0); o.stop(t0 + dur + .02);
+}
+const sfx = {
+  plop: () => tone(rand(380, 520), .14, .05, 'sine', .45),
+  buy: () => { tone(660, .12, .04, 'triangle', 1); tone(990, .16, .035, 'triangle', 1, .06); },
+  glow: () => [784, 988, 1175, 1568].forEach((f, k) => tone(f, .35, .035, 'sine', 1, k * .07)),
+  ach: () => [523, 659, 784].forEach((f, k) => tone(f, .3, .035, 'triangle', 1, k * .09)),
+  spore: () => [392, 330, 262, 196].forEach((f, k) => tone(f, .7, .04, 'sine', 1.5, k * .12)),
+};
+
+/* ================= CANVAS ================= */
+const stage = $('stage'), cv = $('cv'), ctx = cv.getContext('2d');
+const bg = document.createElement('canvas'), bgx = bg.getContext('2d');
+const hy = document.createElement('canvas'), hyx = hy.getContext('2d');
+let W = 0, H = 0, DPR = 1, SY = 0, bgKey = '';
+const tips = [], anchors = [], motes = [], ripples = [], floats = [], parts = [];
+let growAcc = 0, moteAcc = 0, fadeTick = 0, shownDepthCm = 1;
+
+function mulberry(a){ return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function layerY(j){ let y = SY; for (let k = 0; k < j; k++) y += HZ[k].frac * (H - SY); return y; }
+function yOfCm(cm){
+  for (let j = 0; j < HZ.length; j++){
+    const [a, b] = HZ[j].cm;
+    if (cm <= b || j === HZ.length - 1){ const f = clamp((cm - a) / (b - a), 0, 1); return layerY(j) + f * (layerY(j + 1) - layerY(j)); }
+  }
+  return H;
+}
+function depthCm(){
+  const j = hzIndex(), h = HZ[j], nx = HZ[j + 1];
+  let f;
+  if (j === 0) f = Math.log10(1 + s.runTotal) / 4;
+  else if (nx) f = Math.log(s.runTotal / h.at) / Math.log(nx.at / h.at);
+  else f = Math.log10(s.runTotal / h.at) / 3;
+  return h.cm[0] + clamp(f, 0, 1) * (h.cm[1] - h.cm[0]);
+}
+const frontY = () => Math.max(SY + 34, yOfCm(shownDepthCm));
+
+function resize(){
+  const r = stage.getBoundingClientRect();
+  const nW = Math.max(1, Math.round(r.width)), nH = Math.max(1, Math.round(r.height));
+  if (nW === W && nH === H) return;
+  const oW = W, oH = H, oSY = SY;
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = nW; H = nH; SY = Math.round(clamp(H * .2, 64, 170));
+  cv.width = W * DPR; cv.height = H * DPR; ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  let old = null;
+  if (oW && hy.width){ old = document.createElement('canvas'); old.width = hy.width; old.height = hy.height; old.getContext('2d').drawImage(hy, 0, 0); }
+  hy.width = W * DPR; hy.height = H * DPR; hyx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (old){
+    hyx.save(); hyx.setTransform(1, 0, 0, 1, 0, 0);
+    // map old soil region onto new soil region
+    const sy0 = oSY * (old.height / oH), sy1 = SY * DPR;
+    hyx.drawImage(old, 0, sy0, old.width, old.height - sy0, 0, sy1, hy.width, hy.height - sy1);
+    hyx.restore();
+    const sx = W / oW, sy = (H - SY) / (oH - oSY);
+    for (const p of tips.concat(anchors)){ p.x *= sx; p.y = SY + (p.y - oSY) * sy; }
+  }
+  bgKey = '';
+}
+
+function visualKey(){
+  const g = s.gens;
+  const trees = g[3] > 0 ? Math.min(5, 1 + Math.floor(Math.log2(g[3]))) : 0;
+  const big = g[7] > 0 ? 1 : 0;
+  const mush = g[2] > 0 ? Math.min(9, 1 + Math.floor(Math.log2(g[2]) * 1.3)) : 0;
+  const honey = g[4] > 0 ? Math.min(5, 1 + Math.floor(Math.log2(g[4]))) : 0;
+  const lich = g[5] > 0 ? 1 : 0;
+  const cord = g[6] > 0 ? Math.min(5, 1 + Math.floor(Math.log2(g[6]))) : 0;
+  const tricho = g[1] > 0 ? Math.min(8, 1 + Math.floor(Math.log2(g[1]))) : 0;
+  const proto = g[8] > 0 ? Math.min(3, 1 + Math.floor(Math.log2(g[8]) / 2)) : 0;
+  return {trees, big, mush, honey, lich, cord, tricho, proto, key:[W, H, hzIndex(), trees, big, mush, honey, lich, cord, tricho, proto].join('|')};
+}
+
+function buildBg(v){
+  bg.width = W * DPR; bg.height = H * DPR;
+  const g = bgx; g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const R = mulberry(1337);
+  // sky / understory
+  let gr = g.createLinearGradient(0, 0, 0, SY);
+  gr.addColorStop(0, '#0c0b0f'); gr.addColorStop(1, '#1d1813');
+  g.fillStyle = gr; g.fillRect(0, 0, W, SY);
+  for (let k = 0; k < 9; k++){ const x = R() * W, w = 5 + R() * 12; g.fillStyle = `rgba(70,56,44,${.18 + R() * .18})`; g.fillRect(x, 0, w, SY); }
+  // soil horizons with wavy boundaries
+  HZ.forEach((L, j) => {
+    const y0 = layerY(j), y1 = layerY(j + 1);
+    g.fillStyle = L.col; g.beginPath(); g.moveTo(0, y0);
+    for (let x = 0; x <= W + 12; x += 12) g.lineTo(x, y0 + (j ? Math.sin(x * .021 + j * 2) * 3 + (R() - .5) * 3 : 0));
+    g.lineTo(W, H); g.lineTo(0, H); g.closePath(); g.fill();
+    const count = W * (y1 - y0) / 150;
+    for (let k = 0; k < count; k++){
+      g.fillStyle = L.sp[k & 1]; g.globalAlpha = .35 + R() * .5;
+      g.beginPath(); g.arc(R() * W, y0 + 3 + R() * (y1 - y0 - 3), R() * L.grain + .3, 0, TAU); g.fill();
+    }
+    g.globalAlpha = 1;
+    if (j >= 3){ // stones
+      const n = W * (y1 - y0) / (j === 3 ? 2600 : 1500);
+      for (let k = 0; k < n; k++){
+        const cx = R() * W, cy = y0 + 6 + R() * (y1 - y0 - 6), r = (j === 3 ? 3 : 6) + R() * (j === 3 ? 7 : 16);
+        g.fillStyle = j === 3 ? '#3a332c' : '#3f3b37'; g.beginPath();
+        for (let a = 0; a < 7; a++){ const ang = a / 7 * TAU, rr = r * (.7 + R() * .35); g.lineTo(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr * .7); }
+        g.closePath(); g.fill();
+        g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 1; g.stroke();
+      }
+    }
+  });
+  // roots of the trees above
+  const treeXs = [];
+  const nt = v.trees + v.big;
+  for (let k = 0; k < nt; k++) treeXs.push((k + .5) / nt * W * .82 + W * .06 + (R() - .5) * 30);
+  g.lineCap = 'round';
+  treeXs.forEach((x, k) => {
+    const deep = layerY(2) + (k === nt - 1 && v.big ? (layerY(3) - layerY(2)) * .5 : 0);
+    for (let r = 0; r < 6; r++){
+      let px = x + (R() - .5) * 10, py = SY, a = Math.PI / 2 + (R() - .5) * 1.8, w = 4.5;
+      g.strokeStyle = '#4a3322';
+      while (py < deep && w > .4){
+        const nx = px + Math.cos(a) * 9, ny = py + Math.sin(a) * 9;
+        g.lineWidth = w; g.beginPath(); g.moveTo(px, py); g.lineTo(nx, ny); g.stroke();
+        px = nx; py = ny; a += (R() - .5) * .5; a += (Math.PI / 2 - a) * .08; w *= .93;
+      }
+    }
+  });
+  // Prototaxites columns
+  for (let k = 0; k < v.proto; k++){
+    const x = W * (.15 + k * .3) + R() * 30, w = 18 + R() * 8;
+    gr = g.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+    gr.addColorStop(0, '#5b5243'); gr.addColorStop(.5, '#867a63'); gr.addColorStop(1, '#4a4236');
+    g.fillStyle = gr; g.fillRect(x - w / 2, 0, w, SY);
+    g.strokeStyle = 'rgba(30,26,20,.35)'; g.lineWidth = 1;
+    for (let y = 8; y < SY; y += 9){ g.beginPath(); g.moveTo(x - w / 2, y); g.lineTo(x + w / 2, y + 2); g.stroke(); }
+  }
+  // tree trunks
+  treeXs.forEach((x, k) => {
+    const w = (k === nt - 1 && v.big) ? 46 : 22 + R() * 12;
+    gr = g.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+    gr.addColorStop(0, '#2a2018'); gr.addColorStop(.4, '#3d2f22'); gr.addColorStop(1, '#221a13');
+    g.fillStyle = gr; g.beginPath();
+    g.moveTo(x - w * .9, SY); g.quadraticCurveTo(x - w * .45, SY - 8, x - w * .4, SY - 26); g.lineTo(x - w * .36, 0);
+    g.lineTo(x + w * .36, 0); g.lineTo(x + w * .4, SY - 26); g.quadraticCurveTo(x + w * .45, SY - 8, x + w * .9, SY); g.fill();
+    g.strokeStyle = 'rgba(15,11,8,.5)'; g.lineWidth = 1;
+    for (let b = 0; b < 5; b++){ const bx = x - w * .3 + R() * w * .6; g.beginPath(); g.moveTo(bx, 0); g.lineTo(bx + (R() - .5) * 4, SY - 20); g.stroke(); }
+    if (v.lich){
+      for (let l = 0; l < 7; l++){
+        g.fillStyle = R() > .5 ? 'rgba(178,190,160,.75)' : 'rgba(150,168,140,.6)';
+        g.beginPath(); g.ellipse(x + (R() - .5) * w * .6, SY - 30 - R() * (SY - 40), 2 + R() * 4, 1.5 + R() * 2.5, R(), 0, TAU); g.fill();
+      }
+    }
+  });
+  // lichen on surface stones
+  if (v.lich){
+    for (let k = 0; k < 4; k++){
+      const x = R() * W; g.fillStyle = '#4a4540'; g.beginPath(); g.ellipse(x, SY - 2, 12 + R() * 8, 7, 0, Math.PI, TAU); g.fill();
+      g.fillStyle = 'rgba(190,200,165,.8)'; for (let l = 0; l < 4; l++){ g.beginPath(); g.arc(x + (R() - .5) * 16, SY - 4 - R() * 4, 1.5 + R() * 1.8, 0, TAU); g.fill(); }
+    }
+  }
+  // leaf litter
+  const leafCols = ['#5c3a1d', '#6f4a22', '#3f2a17', '#7d5a2b', '#4f3220'];
+  for (let k = 0; k < W / 3.2; k++){
+    g.fillStyle = leafCols[k % 5]; g.globalAlpha = .65 + R() * .35;
+    g.beginPath(); g.ellipse(R() * W, SY - 1 + R() * 7, 2 + R() * 4.5, 1 + R() * 1.8, R() * Math.PI, 0, TAU); g.fill();
+  }
+  g.globalAlpha = 1;
+  // Trichoderma: green mould patches on litter
+  for (let k = 0; k < v.tricho; k++){
+    const x = R() * W;
+    for (let d = 0; d < 14; d++){ g.fillStyle = `rgba(${110 + R() * 40},${150 + R() * 40},${90 + R() * 30},${.35 + R() * .4})`; g.beginPath(); g.arc(x + (R() - .5) * 18, SY + (R() - .3) * 5, .8 + R() * 1.6, 0, TAU); g.fill(); }
+  }
+  // mushrooms
+  const shroom = (x, h, cw, cap, stem) => {
+    g.fillStyle = stem; g.beginPath(); g.moveTo(x - cw * .09, SY + 2); g.quadraticCurveTo(x - cw * .14, SY - h * .5, x - cw * .07, SY - h); g.lineTo(x + cw * .07, SY - h); g.quadraticCurveTo(x + cw * .12, SY - h * .5, x + cw * .09, SY + 2); g.fill();
+    g.fillStyle = cap; g.beginPath(); g.ellipse(x, SY - h, cw / 2, cw * .3, 0, Math.PI, TAU); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x - cw / 2, SY - h); g.lineTo(x + cw / 2, SY - h); g.stroke();
+  };
+  for (let k = 0; k < v.mush; k++) shroom(R() * W, 8 + R() * 10, 14 + R() * 12, R() > .5 ? '#cfc2a8' : '#b7aa92', '#e3d8c2');
+  for (let k = 0; k < v.honey; k++){ const x = R() * W; for (let c = 0; c < 3; c++) shroom(x + (c - 1) * 7, 10 + R() * 9, 10 + R() * 5, '#c98f3e', '#d9c7a0'); }
+  for (let k = 0; k < v.cord; k++){
+    const x = R() * W, h = 16 + R() * 14; g.strokeStyle = '#d07a33'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(x, SY); g.quadraticCurveTo(x + 4, SY - h * .6, x + 1, SY - h); g.stroke();
+    g.fillStyle = '#e4954a'; g.beginPath(); g.ellipse(x + 1, SY - h, 2.6, 4.5, 0, 0, TAU); g.fill();
+    g.fillStyle = '#1c1410'; g.beginPath(); g.ellipse(x - 3, SY - 1, 3, 1.6, 0, 0, TAU); g.ellipse(x - 7, SY - 1, 2, 1.4, 0, 0, TAU); g.fill();
+  }
+  // surface line
+  g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 2; g.beginPath(); g.moveTo(0, SY + 6); g.lineTo(W, SY + 6); g.stroke();
+  // depth ruler
+  const rx = W - 10, hz = hzIndex();
+  g.strokeStyle = 'rgba(237,227,205,.35)'; g.lineWidth = 1; g.beginPath(); g.moveTo(rx, SY); g.lineTo(rx, H); g.stroke();
+  g.textAlign = 'right'; g.textBaseline = 'middle';
+  for (const cm of [0, 10, 20, 30, 50, 70, 90, 120, 150, 200, 250, 300]){
+    const y = yOfCm(cm); if (y > H - 6) continue;
+    const major = [0, 30, 90, 200].includes(cm);
+    g.beginPath(); g.moveTo(rx - (major ? 8 : 4), y); g.lineTo(rx, y); g.stroke();
+  }
+  HZ.forEach((L, j) => {
+    const y0 = layerY(j), y1 = layerY(j + 1), ym = Math.max(y0 + 12, Math.min(y0 + 16, (y0 + y1) / 2));
+    const known = j <= hz;
+    g.font = '15px "Young Serif", Georgia, serif'; g.fillStyle = known ? 'rgba(237,227,205,.9)' : 'rgba(237,227,205,.3)';
+    g.fillText(L.k, rx - 14, ym);
+    g.font = '10px "DM Mono", ui-monospace, monospace'; g.fillStyle = known ? 'rgba(237,227,205,.55)' : 'rgba(237,227,205,.22)';
+    if (y1 - y0 > 26) g.fillText(known ? `${L.name} · ${L.cm[0]}–${L.cm[1]} cm` : 'não explorado', rx - 32, ym);
+  });
+}
+
+function spawnTip(x, y, a, w){
+  if (tips.length >= 70) tips.shift();
+  tips.push({x, y, a, w:w || rand(.7, 1.3), life:rand(50, 160)});
+}
+function seedHyphae(){
+  tips.length = 0; anchors.length = 0;
+  for (let k = 0; k < 4; k++) spawnTip(rand(.15, .85) * W, SY + 8, Math.PI / 2 + rand(-.6, .6));
+}
+function growStep(){
+  if (!tips.length){
+    if (anchors.length){ const p = anchors[(Math.random() * anchors.length) | 0]; spawnTip(p.x, p.y, rand(0, TAU)); }
+    else spawnTip(rand(.1, .9) * W, SY + 8, Math.PI / 2);
+  }
+  const t = tips[(Math.random() * tips.length) | 0];
+  const len = rand(2, 4.2), fy = frontY();
+  t.a += rand(-.45, .45);
+  let nx = t.x + Math.cos(t.a) * len, ny = t.y + Math.sin(t.a) * len + .35;
+  if (ny < SY + 6){ ny = SY + 6; t.a = Math.abs(t.a); }
+  if (ny > fy){ ny = fy - rand(0, 3); t.a = -Math.abs(t.a); }
+  if (nx < 2 || nx > W - 22){ nx = clamp(nx, 2, W - 22); t.a = Math.PI - t.a; }
+  hyx.strokeStyle = `rgba(237,227,205,${.38 + t.w * .2})`; hyx.lineWidth = t.w; hyx.lineCap = 'round';
+  hyx.beginPath(); hyx.moveTo(t.x, t.y); hyx.lineTo(nx, ny); hyx.stroke();
+  t.x = nx; t.y = ny; t.life--;
+  if (Math.random() < .12){ if (anchors.length >= 600) anchors[(Math.random() * 600) | 0] = {x:nx, y:ny}; else anchors.push({x:nx, y:ny}); }
+  if (Math.random() < .045) spawnTip(nx, ny, t.a + (Math.random() < .5 ? -1 : 1) * rand(.5, 1.1), Math.max(.45, t.w * .82));
+  if (t.life <= 0) tips.splice(tips.indexOf(t), 1);
+}
+
+function draw(dt){
+  const v = visualKey();
+  if (v.key !== bgKey){ bgKey = v.key; buildBg(v); }
+  shownDepthCm += (depthCm() - shownDepthCm) * Math.min(1, dt * 1.5);
+  // grow hyphae
+  const rate = Math.min(260, 14 + 22 * Math.log10(1 + cache.nps) + (s.fx.frenzy > 0 ? 60 : 0));
+  growAcc += rate * dt;
+  let steps = Math.min(40, growAcc | 0); growAcc -= steps;
+  while (steps-- > 0) growStep();
+  // slow fade so the network breathes instead of saturating
+  if (++fadeTick % 40 === 0){
+    hyx.save(); hyx.globalCompositeOperation = 'destination-out'; hyx.fillStyle = 'rgba(0,0,0,.05)'; hyx.fillRect(0, 0, W, H); hyx.restore();
+  }
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(bg, 0, 0, W, H);
+  // rain
+  if (s.fx.rain > 0){
+    ctx.fillStyle = 'rgba(80,110,140,.08)'; ctx.fillRect(0, 0, W, SY);
+    ctx.strokeStyle = 'rgba(148,185,218,.45)'; ctx.lineWidth = 1; ctx.beginPath();
+    for (let k = 0; k < 70; k++){ const x = Math.random() * W, y = Math.random() * SY; ctx.moveTo(x, y); ctx.lineTo(x - 2, y + 9); }
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(148,185,218,.06)'; ctx.fillRect(0, SY, W, (layerY(1) - SY) * 1.5);
+  }
+  ctx.drawImage(hy, 0, 0, W, H);
+  // living tips
+  ctx.fillStyle = 'rgba(255,248,228,.9)';
+  for (const t of tips){ ctx.beginPath(); ctx.arc(t.x, t.y, 1.3, 0, TAU); ctx.fill(); }
+  // nutrient motes travelling up the network
+  moteAcc += Math.min(30, 1.5 + 4 * Math.log10(1 + cache.nps)) * dt;
+  while (moteAcc >= 1 && anchors.length){ moteAcc--; const p = anchors[(Math.random() * anchors.length) | 0]; motes.push({x:p.x, y:p.y, vy:-rand(14, 32), ph:rand(0, TAU)}); }
+  if (!anchors.length) moteAcc = 0;
+  for (let k = motes.length - 1; k >= 0; k--){
+    const m = motes[k]; m.y += m.vy * dt; m.ph += dt * 3; m.x += Math.sin(m.ph) * .25;
+    if (m.y < SY + 4){ motes.splice(k, 1); continue; }
+    ctx.fillStyle = 'rgba(233,166,73,.85)'; ctx.beginPath(); ctx.arc(m.x, m.y, 1.4, 0, TAU); ctx.fill();
+  }
+  if (motes.length > 260) motes.splice(0, motes.length - 260);
+  // fog below the growth front
+  const fy = frontY();
+  const fg = ctx.createLinearGradient(0, fy - 4, 0, fy + 46);
+  fg.addColorStop(0, 'rgba(12,9,7,0)'); fg.addColorStop(1, 'rgba(12,9,7,.8)');
+  ctx.fillStyle = fg; ctx.fillRect(0, fy - 4, W - 1, 50);
+  ctx.fillStyle = 'rgba(12,9,7,.8)'; ctx.fillRect(0, fy + 46, W, H);
+  // depth marker on ruler
+  ctx.fillStyle = '#e9a649'; ctx.beginPath(); ctx.moveTo(W - 10, fy); ctx.lineTo(W - 2, fy - 5); ctx.lineTo(W - 2, fy + 5); ctx.fill();
+  // ripples, particles, floating numbers
+  for (let k = ripples.length - 1; k >= 0; k--){
+    const r = ripples[k]; r.t += dt; if (r.t > .6){ ripples.splice(k, 1); continue; }
+    ctx.strokeStyle = `rgba(233,166,73,${.6 * (1 - r.t / .6)})`; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(r.x, r.y, 6 + r.t * 70, 0, TAU); ctx.stroke();
+  }
+  for (let k = parts.length - 1; k >= 0; k--){
+    const p = parts[k]; p.t += dt; if (p.t > p.life){ parts.splice(k, 1); continue; }
+    p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.g || 0) * dt;
+    ctx.globalAlpha = 1 - p.t / p.life; ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '500 14px "DM Mono", ui-monospace, monospace';
+  for (let k = floats.length - 1; k >= 0; k--){
+    const f = floats[k]; f.t += dt; if (f.t > 1.1){ floats.splice(k, 1); continue; }
+    ctx.globalAlpha = 1 - f.t / 1.1; ctx.fillStyle = f.c; ctx.fillText(f.txt, f.x, f.y - f.t * 38);
+  }
+  ctx.globalAlpha = 1;
+  if (s.fx.frenzy > 0){
+    const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .35, W / 2, H / 2, Math.max(W, H) * .75);
+    vg.addColorStop(0, 'rgba(168,240,187,0)'); vg.addColorStop(1, `rgba(168,240,187,${.10 + .04 * Math.sin(performance.now() / 300)})`);
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  }
+}
+
+/* ================= UI HELPERS ================= */
+function toast(kicker, title, body, kind = ''){
+  const el = document.createElement('div');
+  el.className = 'toast ' + kind;
+  el.innerHTML = `<div class="k"></div><b></b><span></span>`;
+  el.children[0].textContent = kicker; el.children[1].textContent = title; el.children[2].textContent = body || '';
+  const box = $('toasts'); box.prepend(el);
+  while (box.children.length > 3) box.lastChild.remove();
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 500); }, 4200);
+}
+function journal(text){
+  s.log.unshift({t:clock(), x:text}); s.log.length = Math.min(s.log.length, 4);
+  renderJournal();
+}
+function renderJournal(){
+  const ol = $('journal'); ol.textContent = '';
+  for (const e of s.log){
+    const li = document.createElement('li'); const tm = document.createElement('time'); tm.textContent = e.t;
+    const sp = document.createElement('span'); sp.textContent = e.x; li.append(tm, sp); ol.append(li);
+  }
+}
+
+/* ================= ACTIONS ================= */
+let hintClicks = 0;
+function absorb(x, y){
+  recalc();
+  const v = cache.click;
+  addN(v); s.clicks++;
+  floats.push({x, y, t:0, txt:'+' + fmt(v), c:s.fx.touch > 0 ? '#ffd38a' : '#e9a649'});
+  ripples.push({x, y, t:0});
+  const gy = Math.max(y, SY + 8);
+  for (let k = 0; k < 2; k++) spawnTip(x, Math.min(gy, frontY() - 2), rand(0, TAU), rand(.8, 1.3));
+  sfx.plop();
+  if (++hintClicks === 6) $('hint').style.opacity = 0;
+}
+stage.addEventListener('pointerdown', e => {
+  if (e.target.closest('button')) return;
+  const r = stage.getBoundingClientRect();
+  absorb(e.clientX - r.left, e.clientY - r.top);
+});
+stage.addEventListener('keydown', e => {
+  if (e.target !== stage) return;
+  if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); absorb(rand(.25, .75) * W, rand(SY + 20, Math.max(SY + 30, frontY() - 10))); }
+});
+
+function buyGen(i){
+  const k = buyCount(i); if (k < 1) return;
+  const c = costOf(i, k);
+  if (s.n < c) return;
+  s.n -= c; s.gens[i] += k;
+  if (!s.seen['g' + i]){ s.seen['g' + i] = 1; journal(GENS[i].log); }
+  const el = $('gen' + i); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+  for (let n = 0; n < Math.min(6, k); n++) spawnTip(rand(.1, .9) * W, SY + 8, Math.PI / 2 + rand(-.8, .8));
+  sfx.buy(); recalc(); renderAll();
+}
+function buyUp(id){
+  const u = UPMAP[id]; if (!u || s.ups[id] || s.n < u.cost) return;
+  s.n -= u.cost; s.ups[id] = true; sfx.buy(); recalc(); renderAll();
+}
+function buyShop(id){
+  const it = SHOP.find(x => x.id === id), l = lvl(id);
+  if (!it || l >= it.max || s.sporeBank < it.cost(l)) return;
+  s.sporeBank -= it.cost(l); s.shop[id] = l + 1;
+  if (id === 'memo') s.gens[0] = Math.max(s.gens[0], 10 * (l + 1));
+  sfx.buy(); recalc(); renderAll();
+}
+let prestigeArm = 0;
+function prestige(){
+  const g = sporeGain();
+  if (g < 1) return;
+  if (Date.now() - prestigeArm > 4000){
+    prestigeArm = Date.now(); const b = $('prestigeBtn'); b.classList.add('arm'); b.textContent = `Confirmar: liberar ${fmt(g)} esporos`;
+    setTimeout(() => { b.classList.remove('arm'); renderSpores(); }, 4000);
+    return;
+  }
+  prestigeArm = 0;
+  // spore burst from the network
+  for (let k = 0; k < 140 && anchors.length; k++){
+    const p = anchors[(Math.random() * anchors.length) | 0];
+    parts.push({x:p.x, y:p.y, vx:rand(-20, 20), vy:-rand(40, 140), r:rand(1, 2.4), t:0, life:rand(1.2, 2.6), c:'#b9a3e8'});
+  }
+  s.spores += g; s.sporeBank += g; s.prestiges++;
+  const keep = {spores:s.spores, sporeBank:s.sporeBank, shop:s.shop, ach:s.ach, clicks:s.clicks, golden:s.golden, prestiges:s.prestiges, rains:s.rains, played:s.played, lifeTotal:s.lifeTotal, buyAmt:s.buyAmt, sound:s.sound, seen:s.seen, longAway:s.longAway, log:s.log};
+  s = Object.assign(fresh(), keep);
+  if (lvl('memo')) s.gens[0] = 10 * lvl('memo');
+  hyx.clearRect(0, 0, W, H); seedHyphae(); shownDepthCm = 1; motes.length = 0;
+  $('golden').hidden = true;
+  sfx.spore();
+  journal(`Ciclo ${s.prestiges + 1}: ${fmt(g)} esporos partiram com o vento. Uma nova germinação começa.`);
+  toast('Esporulação', `+${fmt(g)} esporos`, `Produção agora +${Math.round(s.spores * sporeEff() * 100)}% para sempre.`, 'spore');
+  recalc(); upKey = ''; renderAll(); save();
+}
+
+/* ---------- golden mushroom & rain ---------- */
+const goldenBtn = $('golden');
+function goldenInterval(){ return rand(70, 160) / (s.ups.mycena ? 2 : 1) / (1 + .25 * lvl('luz')); }
+function placeGolden(){ goldenBtn.style.left = (s.gold.x * (W - 40) + 10) + 'px'; goldenBtn.style.top = (SY + 4) + 'px'; }
+goldenBtn.addEventListener('click', () => {
+  if (s.gold.left <= 0) return;
+  s.gold.left = 0; goldenBtn.hidden = true; s.golden++;
+  const x = s.gold.x * (W - 40) + 10, y = SY - 10, dur = s.ups.lucif ? 2 : 1;
+  for (let k = 0; k < 50; k++) parts.push({x, y, vx:rand(-90, 90), vy:rand(-120, 20), g:160, r:rand(1, 2.2), t:0, life:rand(.6, 1.3), c:'#a8f0bb'});
+  const roll = Math.random();
+  recalc();
+  if (roll < .5){
+    const gain = Math.min(s.n * .15, cache.npsBase * 900) + cache.npsBase * 30 + 25;
+    addN(gain); floats.push({x, y:y - 10, t:0, txt:'+' + fmt(gain), c:'#a8f0bb'});
+    toast('Cogumelo bioluminescente', 'Colheita luminosa', `+${fmt(gain)} nutrientes de uma vez.`, 'glow');
+  } else if (roll < .85){
+    s.fx.frenzy = 40 * dur;
+    toast('Cogumelo bioluminescente', 'Frenesi micelial', `Produção ×7 por ${40 * dur} segundos.`, 'glow');
+    journal('O micélio inteiro acendeu em verde. Frenesi micelial.');
+  } else {
+    s.fx.touch = 15 * dur;
+    toast('Cogumelo bioluminescente', 'Toque fértil', `Cada toque rende ×25 por ${15 * dur} segundos. Toque rápido!`, 'glow');
+  }
+  sfx.glow(); s.t.golden = goldenInterval(); recalc();
+});
+
+/* ================= TICK ================= */
+function update(dt){
+  s.played += dt; s.runPlayed += dt;
+  const hadRain = s.fx.rain > 0;
+  for (const k of ['rain', 'frenzy', 'touch']) s.fx[k] = Math.max(0, s.fx[k] - dt);
+  if (hadRain && s.fx.rain <= 0) journal('A chuva passou. O solo guarda a umidade.');
+  // golden
+  if (s.gold.left > 0){
+    s.gold.left -= dt;
+    if (s.gold.left <= 0){ goldenBtn.hidden = true; s.t.golden = goldenInterval(); }
+  } else {
+    s.t.golden -= dt;
+    if (s.t.golden <= 0 && s.runTotal > 30){
+      s.gold.left = 13; s.gold.x = rand(.08, .7); goldenBtn.hidden = false; placeGolden();
+      journal('Um brilho verde surgiu entre as folhas. Colha antes que apague.');
+    }
+  }
+  // rain
+  if (s.fx.rain <= 0){
+    s.t.rain -= dt;
+    if (s.t.rain <= 0){
+      s.fx.rain = 45 * (s.ups.hidro ? 2 : 1); s.rains++; s.t.rain = rand(180, 360);
+      journal('Começou a chover. A água abre caminho pelos poros do solo.');
+      toast('Clima', 'Chuva', `Produção ×${rainMult()} por ${Math.round(s.fx.rain)} segundos.`, 'rain');
+    }
+  }
+  recalc();
+  addN(cache.nps * dt);
+  const hz = hzIndex();
+  if (hz > s.hzMax){
+    for (let j = s.hzMax + 1; j <= hz; j++){ journal(HZ[j].log); toast('Profundidade', `Horizonte ${HZ[j].k} · ${HZ[j].name}`, 'A colônia ganhou +20% de produção neste ciclo.'); }
+    s.hzMax = hz; recalc();
+  }
+}
+
+/* ================= RENDER PANEL ================= */
+const genList = $('genList');
+genList.innerHTML = GENS.map((g, i) => `
+  <button class="gen" id="gen${i}" data-i="${i}" type="button" hidden>
+    <span class="tag"><small>${i + 1}</small>${g.tag}</span>
+    <span class="gmain"><span class="gname">${g.name}</span><span class="glatin">${g.latin}</span><span class="gstat" id="gs${i}"></span><span class="gfact">${g.fact}</span></span>
+    <span class="gside"><span class="gown" id="go${i}">0</span><span class="gcost" id="gc${i}"></span></span>
+    <span class="gbar"><i id="gb${i}"></i></span>
+  </button>`).join('') + `
+  <div class="gen teaser" id="teaser" hidden><span class="tag">?</span><span class="gmain"><span class="gname">Espécie não catalogada</span><span class="gstat" id="teaserTxt"></span></span><span></span></div>`;
+genList.addEventListener('click', e => { const b = e.target.closest('.gen[data-i]'); if (b) buyGen(+b.dataset.i); });
+
+$('buyAmt').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  s.buyAmt = b.dataset.amt === 'max' ? 'max' : +b.dataset.amt; renderGens(); renderBuyAmt();
+});
+function renderBuyAmt(){ for (const b of $('buyAmt').children) b.setAttribute('aria-pressed', String(String(s.buyAmt) === b.dataset.amt)); }
+
+function renderGens(){
+  let teaserSet = false;
+  for (let i = 0; i < GENS.length; i++){
+    const el = $('gen' + i), vis = genVisible(i);
+    el.hidden = !vis;
+    if (!vis){
+      if (!teaserSet){ teaserSet = true; $('teaser').hidden = false; $('teaserTxt').textContent = `Aparece ao acumular ${fmt(GENS[i].cost * .35)} nutrientes neste ciclo`; }
+      continue;
+    }
+    const k = buyCount(i), c = costOf(i, k), ok = s.n >= c;
+    el.classList.toggle('ok', ok); el.classList.toggle('poor', !ok); el.setAttribute('aria-disabled', String(!ok));
+    $('go' + i).textContent = s.gens[i];
+    $('gc' + i).textContent = (k > 1 ? `×${k} · ` : '') + fmt(c);
+    $('gb' + i).style.width = (ok ? 100 : clamp(s.n / c * 100, 0, 100)) + '%';
+    const each = genEach(i) * tempMult(), tot = each * s.gens[i];
+    $('gs' + i).textContent = s.gens[i] ? `${fmt(each)}/s cada · ${fmt(tot)}/s (${cache.nps ? Math.round(tot / cache.nps * 100) : 0}%)` : `${fmt(each)}/s cada`;
+    el.setAttribute('aria-label', `${GENS[i].name}: ${s.gens[i]} na colônia. Comprar ${k} por ${fmt(c)} nutrientes.`);
+  }
+  if (!teaserSet) $('teaser').hidden = true;
+}
+
+let upKey = '', ownedKey = '';
+const upList = $('upList');
+upList.addEventListener('click', e => { const b = e.target.closest('.up'); if (b) buyUp(b.dataset.id); });
+function availableUps(){ return UPS.filter(u => !s.ups[u.id] && u.show(s)).sort((a, b) => a.cost - b.cost); }
+function renderUps(){
+  const av = availableUps(), key = av.map(u => u.id).join();
+  if (key !== upKey){
+    upKey = key;
+    upList.innerHTML = av.length ? av.map(u => `<button class="up" type="button" data-id="${u.id}"><span class="uk">${u.kind}</span><span class="un">${u.name}</span><span class="ud">${u.desc}</span><span class="ucost">${fmt(u.cost)}</span></button>`).join('')
+      : '<p class="empty" style="grid-column:1/-1">Nenhuma adaptação disponível agora. Novas aparecem conforme a colônia cresce, chove ou brilha.</p>';
+  }
+  let afford = 0;
+  for (const b of upList.querySelectorAll('.up')){ const ok = s.n >= UPMAP[b.dataset.id].cost; if (ok) afford++; b.classList.toggle('ok', ok); b.classList.toggle('poor', !ok); b.setAttribute('aria-disabled', String(!ok)); }
+  $('upBadge').textContent = afford || '';
+  const owned = UPS.filter(u => s.ups[u.id]), ok2 = owned.map(u => u.id).join();
+  if (ok2 !== ownedKey){
+    ownedKey = ok2;
+    $('ownedCount').textContent = `· ${owned.length} de ${UPS.length}`;
+    $('ownedList').innerHTML = owned.length ? owned.map(u => `<span title="${u.desc}">${u.id[0] === 'g' && /^g\d/.test(u.id) ? u.kind + ': ' : ''}${u.name}</span>`).join('') : '<span>Nenhuma ainda</span>';
+  }
+}
+
+function renderSpores(){
+  const g = sporeGain();
+  $('spTotal').textContent = fmt(s.spores);
+  $('spEff').textContent = Math.round(sporeEff() * 100) + '%';
+  $('spBonus').textContent = '+' + fmt(Math.round(s.spores * sporeEff() * 100)) + '%';
+  $('spGain').textContent = fmt(g);
+  const a = g * g * 1e8, b = (g + 1) * (g + 1) * 1e8;
+  $('spMeter').style.width = clamp((s.runTotal - a) / (b - a) * 100, 0, 100) + '%';
+  $('spNext').textContent = `Próximo esporo com ${fmt(b)} acumulados neste ciclo (agora ${fmt(s.runTotal)}).`;
+  const btn = $('prestigeBtn');
+  if (!btn.classList.contains('arm')) btn.textContent = g >= 1 ? `Esporular e liberar ${fmt(g)} esporos` : 'Esporular (precisa de 100 mi neste ciclo)';
+  btn.setAttribute('aria-disabled', String(g < 1));
+  $('spBadge').textContent = g >= 1 ? '+' + fmt(g) : '';
+  $('spBank').textContent = fmt(s.sporeBank);
+  const shopHtml = SHOP.map(it => {
+    const l = lvl(it.id), max = l >= it.max, c = max ? 0 : it.cost(l), ok = !max && s.sporeBank >= c;
+    return `<div class="shopitem"><div><div class="sn">${it.name}<small>${l}/${it.max}</small></div><div class="sd">${it.desc(l + (max ? 0 : 1))}</div></div><button type="button" data-id="${it.id}" aria-disabled="${!ok}">${max ? 'Completo' : fmt(c) + ' esp.'}</button></div>`;
+  }).join('');
+  const sl = $('shopList'); if (sl.dataset.h !== shopHtml){ sl.dataset.h = shopHtml; sl.innerHTML = shopHtml; }
+}
+$('shopList').addEventListener('click', e => { const b = e.target.closest('button[data-id]'); if (b) buyShop(b.dataset.id); });
+$('prestigeBtn').addEventListener('click', prestige);
+
+let achKey = '';
+function checkAch(){
+  let n = 0;
+  for (const a of ACH){
+    if (!s.ach[a.id] && a.ok(s)){ s.ach[a.id] = 1; toast('Conquista', a.name, a.desc + ' · +1% de produção'); sfx.ach(); }
+    if (s.ach[a.id]) n++;
+  }
+  cache.ach = n;
+}
+function renderAch(){
+  const key = ACH.map(a => s.ach[a.id] ? 1 : 0).join('');
+  if (key === achKey) return; achKey = key;
+  $('achSum').textContent = `${cache.ach} de ${ACH.length} · +${cache.ach}% de produção`;
+  $('achGrid').innerHTML = ACH.map(a => `<div class="ach ${s.ach[a.id] ? 'got' : 'locked'}"><b>${s.ach[a.id] ? a.name : 'Não registrada'}</b><span>${a.desc}</span></div>`).join('');
+}
+function renderStats(){
+  const rows = [
+    ['Nutrientes neste ciclo', fmt(s.runTotal)], ['Nutrientes na vida toda', fmt(s.lifeTotal)],
+    ['Produção por segundo', fmt(cache.nps)], ['Multiplicador global', '×' + fmt(globalMult())],
+    ['Profundidade da rede', `${Math.round(shownDepthCm)} cm · horizonte ${HZ[hzIndex()].k}`],
+    ['Fungos na colônia', fmt(s.gens.reduce((a, b) => a + b, 0))], ['Toques no solo', fmt(s.clicks)],
+    ['Cogumelos brilhantes colhidos', fmt(s.golden)], ['Chuvas', fmt(s.rains)],
+    ['Esporulações', fmt(s.prestiges)], ['Tempo neste ciclo', fmtTime(s.runPlayed)], ['Tempo total', fmtTime(s.played)],
+  ];
+  $('stats').innerHTML = rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+}
+function renderHud(){
+  const nv = fmt(s.n); if ($('nVal').textContent !== nv) $('nVal').textContent = nv;
+  const pv = fmt(cache.nps); if ($('npsVal').textContent !== pv) $('npsVal').textContent = pv;
+  const cvv = fmt(cache.click); if ($('clickVal').textContent !== cvv) $('clickVal').textContent = cvv;
+}
+function renderChips(){
+  const c = [`<span class="chip depth">↓ ${Math.round(shownDepthCm)} cm · ${HZ[hzIndex()].name}</span>`];
+  if (s.fx.rain > 0) c.push(`<span class="chip rain">Chuva ×${rainMult()} · ${Math.ceil(s.fx.rain)}s</span>`);
+  if (s.fx.frenzy > 0) c.push(`<span class="chip frenzy">Frenesi ×7 · ${Math.ceil(s.fx.frenzy)}s</span>`);
+  if (s.fx.touch > 0) c.push(`<span class="chip touch">Toque ×25 · ${Math.ceil(s.fx.touch)}s</span>`);
+  const h = c.join(''); const el = $('chips'); if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; }
+}
+function renderAll(){
+  checkAch(); recalc();
+  renderHud(); renderChips(); renderGens(); renderUps(); renderSpores(); renderAch();
+  if (activeTab === 'registro') renderStats();
+  $('soundBtn').textContent = s.sound ? 'Som ligado' : 'Som desligado';
+}
+
+/* ---------- tabs ---------- */
+let activeTab = 'fungos';
+const tabs = [...document.querySelectorAll('.tab')];
+function selectTab(name){
+  activeTab = name;
+  for (const t of tabs){ const on = t.id === 't-' + name; t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1; $(t.getAttribute('aria-controls')).hidden = !on; }
+  $('tabbody').scrollTop = 0;
+  if (name === 'registro'){ renderStats(); $('saveText').value = exportCode(); }
+  try { localStorage.setItem('micelio.tab', name); } catch (e) {}
+}
+tabs.forEach((t, k) => {
+  t.addEventListener('click', () => selectTab(t.id.slice(2)));
+  t.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const n = tabs[(k + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; n.focus(); selectTab(n.id.slice(2));
+  });
+});
+
+$('soundBtn').addEventListener('click', () => { s.sound = !s.sound; renderAll(); if (s.sound) sfx.buy(); });
+
+/* ================= SAVE ================= */
+function save(){
+  s.lastSave = Date.now();
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch (e) {}
+}
+function exportCode(){ try { return btoa(unescape(encodeURIComponent(JSON.stringify(s)))); } catch (e) { return ''; } }
+$('exportBtn').addEventListener('click', () => {
+  const ta = $('saveText'); ta.value = exportCode();
+  const done = m => { $('saveMsg').textContent = m; };
+  try {
+    navigator.clipboard.writeText(ta.value).then(() => done('Código copiado.'), () => { ta.select(); done('Código selecionado. Copie com Ctrl+C.'); });
+  } catch (e) { ta.select(); done('Código selecionado. Copie com Ctrl+C.'); }
+});
+$('importBtn').addEventListener('click', () => {
+  try {
+    const d = JSON.parse(decodeURIComponent(escape(atob($('saveText').value.trim()))));
+    if (!d || !Array.isArray(d.gens)) throw 0;
+    s = merge(d); hyx.clearRect(0, 0, W, H); seedHyphae(); pregrow(); upKey = ''; ownedKey = ''; achKey = '';
+    renderJournal(); renderBuyAmt(); renderAll(); save(); $('saveMsg').textContent = 'Jogo carregado.';
+  } catch (e) { $('saveMsg').textContent = 'Esse código não é um jogo salvo válido. Cole o código completo e tente de novo.'; }
+});
+let resetArm = 0;
+$('resetBtn').addEventListener('click', () => {
+  const b = $('resetBtn');
+  if (Date.now() - resetArm > 4000){ resetArm = Date.now(); b.classList.add('arm'); b.textContent = 'Confirmar: apagar tudo'; setTimeout(() => { b.classList.remove('arm'); b.textContent = 'Apagar tudo'; }, 4000); return; }
+  resetArm = 0; b.classList.remove('arm'); b.textContent = 'Apagar tudo';
+  s = fresh(); hyx.clearRect(0, 0, W, H); seedHyphae(); shownDepthCm = 1; upKey = ''; ownedKey = ''; achKey = '';
+  renderJournal(); renderBuyAmt(); renderAll(); save(); $('saveMsg').textContent = 'Progresso apagado. Uma nova colônia começa.';
+});
+
+function pregrow(){
+  shownDepthCm = depthCm();
+  const n = 260 + Math.min(2600, 45 * s.gens.reduce((a, b) => a + b, 0));
+  for (let k = 0; k < n; k++) growStep();
+}
+
+/* ================= BOOT ================= */
+function offlineGain(){
+  const away = (Date.now() - (s.lastSave || Date.now())) / 1000;
+  if (away < 60) return;
+  if (away >= 3600) s.longAway = true;
+  const secs = Math.min(away, 12 * 3600), eff = .5 + .1 * lvl('dorm');
+  s.fx = {rain:0, frenzy:0, touch:0}; s.gold.left = 0;
+  recalc();
+  const gain = cache.npsBase * secs * eff;
+  s.played += secs; s.runPlayed += secs;
+  if (gain <= 0) return;
+  addN(gain);
+  $('mBody').textContent = `Você ficou fora por ${fmtTime(away)}. Em dormência, o micélio trabalhou a ${Math.round(eff * 100)}% e absorveu:`;
+  $('mGain').textContent = fmt(gain) + ' nutrientes';
+  $('modal').hidden = false; $('mOk').focus();
+}
+$('mOk').addEventListener('click', () => { $('modal').hidden = true; stage.focus(); });
+
+let last = performance.now(), uiAcc = 0, saveAcc = 0;
+function frame(t){
+  let dt = (t - last) / 1000; last = t;
+  if (dt > .5){ update(Math.min(dt, 3600)); dt = .016; } else update(dt);
+  draw(dt);
+  renderHud();
+  uiAcc += dt; saveAcc += dt;
+  if (uiAcc > .2){ uiAcc = 0; renderAll(); }
+  if (saveAcc > 10){ saveAcc = 0; save(); }
+  requestAnimationFrame(frame);
+}
+
+function start(data){
+  let d = data && data.state;
+  if (!d){ try { d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { d = null; } }
+  s = merge(d);
+  if (data && data.state) s.lastSave = Date.now();
+  resize();
+  try { document.fonts.ready.then(() => { bgKey = ''; }); } catch (e) {}
+  new ResizeObserver(() => { resize(); if (s.gold.left > 0) placeGolden(); }).observe(stage);
+  seedHyphae(); checkAch(); recalc(); pregrow();
+  if (s.clicks > 6) $('hint').style.opacity = 0;
+  if (s.gold.left > 0){ goldenBtn.hidden = false; placeGolden(); }
+  if (!s.log.length) journal('Um esporo caiu na serrapilheira úmida. Toque no solo para alimentá-lo.');
+  else renderJournal();
+  renderBuyAmt();
+  let tab = 'fungos'; try { tab = localStorage.getItem('micelio.tab') || 'fungos'; } catch (e) {}
+  selectTab(tabs.some(t => t.id === 't-' + tab) ? tab : 'fungos');
+  offlineGain();
+  renderAll();
+  document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+  window.addEventListener('pagehide', save);
+  window.claude?.hot?.snapshot?.(() => ({state:JSON.parse(JSON.stringify(s))}));
+  last = performance.now();
+  requestAnimationFrame(frame);
+}
+window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+})();
+</script>
+</body>
+</html>
